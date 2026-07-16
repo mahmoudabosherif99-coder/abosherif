@@ -1,0 +1,18 @@
+{
+  "name": "مزارع أبوشريف",
+  "short_name": "أبوشريف",
+  "description": "Mazarie Abo Sherif - Poultry Management",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#1a73e8",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

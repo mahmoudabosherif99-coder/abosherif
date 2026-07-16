@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <defs>
+    <clipPath id="round">
+      <rect width="192" height="192" rx="40" ry="40"/>
+    </clipPath>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="#1a73e8"/>
+  <text x="96" y="145" text-anchor="middle" font-size="120" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji">🐔</text>
+</svg>
