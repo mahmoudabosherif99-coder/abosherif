@@ -36,6 +36,13 @@ const syncCustomSites = (d) => {
   (d?.customSites || []).forEach(cs => {
     if (cs?.id && !SITES.find(s => s.id === cs.id)) SITES.push(cs);
   });
+  // العنابر اللي اتضافت بعدين لأي موقع (سواء موقع أساسي أو مُضاف) بتتزامن هنا
+  Object.entries(d?.extraBarns || {}).forEach(([siteId, barns]) => {
+    const s = SITES.find(x => x.id === siteId);
+    if (s && Array.isArray(barns)) {
+      barns.forEach(b => { if (!s.barns.includes(b)) s.barns.push(b); });
+    }
+  });
 };
 
 const mergeData = (d) => {
@@ -2061,6 +2068,7 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
   const [confirm, setConfirm] = useState(null);
   const [newSiteForm, setNewSiteForm] = useState({ name: "", barnCount: "" });
   const [siteMsg, setSiteMsg] = useState("");
+  const [addBarnForm, setAddBarnForm] = useState({});
 
   useEffect(() => {
     if (activeTab === "backup") { setLoadingBk(true); fetchBackups().then(b => { setBackups(Array.isArray(b) ? b : []); setLoadingBk(false); }); }
@@ -2120,6 +2128,27 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
     setSiteMsg("✅ تم إضافة الموقع"); setTimeout(() => setSiteMsg(""), 3000);
   };
 
+  const addBarnsToSite = (siteId) => {
+    const site = SITES.find(s => s.id === siteId);
+    if (!site) return;
+    const count = Math.floor(num(addBarnForm[siteId]));
+    if (!count || count < 1) return;
+    const startIdx = site.barns.length + 1;
+    const newBarns = Array.from({ length: count }, (_, i) => `عنبر ${startIdx + i}`);
+    site.barns.push(...newBarns);
+    const d = JSON.parse(JSON.stringify(data));
+    d.extraBarns = { ...(d.extraBarns || {}) };
+    d.extraBarns[siteId] = [...(d.extraBarns[siteId] || []), ...newBarns];
+    if (d.customSites) {
+      d.customSites = d.customSites.map(cs => cs.id === siteId ? { ...cs, barns: [...cs.barns, ...newBarns] } : cs);
+    }
+    d.sites[siteId] = d.sites[siteId] || { sessions: {}, archive: [], feedStore: { received: [], dispatched: [], returned: [] }, medStore: { received: [], returned: [] }, gasStore: { received: [] }, injections: [] };
+    newBarns.forEach(b => { d.sites[siteId].sessions[b] = null; });
+    onUpdate(d);
+    setAddBarnForm(p => ({ ...p, [siteId]: "" }));
+    setSiteMsg("✅ تم إضافة العنابر"); setTimeout(() => setSiteMsg(""), 3000);
+  };
+
   const UserForm = ({ u, setU, onSave, onCancel }) => (
     <div className="card" style={{ border: `1.5px solid ${C.accent}` }}>
       <div className="g2" style={{ marginBottom: 10 }}>
@@ -2176,9 +2205,15 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
           <div className="card">
             <div className="card-t">📋 المواقع الحالية</div>
             {SITES.map(s => (
-              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 4px", borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
-                <span style={{ fontWeight: 700 }}>🏭 {s.name}</span>
-                <span style={{ color: C.muted }}>{s.barns.length} عنابر{s.custom && <span className="badge by" style={{ marginRight: 6 }}>مُضاف</span>}</span>
+              <div key={s.id} style={{ padding: "8px 4px", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                  <span style={{ fontWeight: 700 }}>🏭 {s.name}</span>
+                  <span style={{ color: C.muted }}>{s.barns.length} عنابر{s.custom && <span className="badge by" style={{ marginRight: 6 }}>مُضاف</span>}</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+                  <input className="inp" type="number" min="1" style={{ maxWidth: 90 }} placeholder="عدد" value={addBarnForm[s.id] || ""} onChange={e => setAddBarnForm(p => ({ ...p, [s.id]: e.target.value }))} />
+                  <button className="btn btn-p btn-xs" onClick={() => addBarnsToSite(s.id)}>➕ إضافة عنابر</button>
+                </div>
               </div>
             ))}
           </div>
