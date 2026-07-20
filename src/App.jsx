@@ -31,7 +31,15 @@ const makeEmpty = () => {
   return { sites };
 };
 
+// المواقع اللي المدير ضافها من الإعدادات بيتم مزامنتها هنا مع قائمة SITES الأساسية
+const syncCustomSites = (d) => {
+  (d?.customSites || []).forEach(cs => {
+    if (cs?.id && !SITES.find(s => s.id === cs.id)) SITES.push(cs);
+  });
+};
+
 const mergeData = (d) => {
+  syncCustomSites(d);
   const empty = makeEmpty();
   if (!d || !d.sites) return empty;
   SITES.forEach(site => {
@@ -227,12 +235,21 @@ input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 .alert-ok{background:rgba(30,140,78,.1);border:1px solid rgba(30,140,78,.3);color:${C.green}}
 .alert-err{background:rgba(192,57,43,.1);border:1px solid rgba(192,57,43,.3);color:${C.red}}
 
-.home-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
-.site-card{background:${C.card};border:1.5px solid ${C.border};border-radius:14px;padding:18px;cursor:pointer;transition:all .25s;border-top:3px solid ${C.accent};box-shadow:0 2px 6px rgba(0,0,0,.05)}
-.site-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(26,115,232,.12)}
-.barn-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
-.btag{font-size:11px;padding:3px 9px;border-radius:6px;background:${C.cardAlt};color:${C.muted};border:1px solid ${C.border};font-weight:600}
+.home-grid{display:flex;flex-direction:column;gap:16px}
+.site-card{background:${C.card};border:1.5px solid ${C.border};border-radius:16px;padding:0;cursor:pointer;transition:all .25s;box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden;display:flex;align-items:stretch;min-height:118px}
+.site-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.1)}
+.site-card-body{flex:1;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.site-card-title{font-weight:800;font-size:15px;display:flex;align-items:center;gap:6px}
+.site-card-sub{display:flex;align-items:center;justify-content:space-between;margin-top:4px}
+.site-card-sub-text{font-size:11.5px;color:${C.muted}}
+.site-card-chevron{font-size:18px;color:${C.muted};opacity:.6}
+.site-card-img{width:104px;flex:0 0 104px;position:relative;display:flex;align-items:center;justify-content:center;font-size:36px}
+.site-card-img .emblem{position:absolute;bottom:8px;left:8px;width:30px;height:30px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 1px 5px rgba(0,0,0,.25)}
+.barn-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.btag{font-size:11px;padding:4px 11px 4px 8px;border-radius:20px;background:${C.cardAlt};color:${C.muted};border:1px solid ${C.border};font-weight:700;display:inline-flex;align-items:center;gap:5px}
+.btag .dot{width:6px;height:6px;border-radius:50%;background:${C.muted};display:inline-block}
 .btag.on{background:rgba(30,140,78,.1);color:${C.green};border-color:rgba(30,140,78,.3)}
+.btag.on .dot{background:${C.green}}
 
 .empty{text-align:center;padding:40px 20px;color:${C.muted}}
 .empty .ico{font-size:40px;margin-bottom:10px}
@@ -250,7 +267,6 @@ input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
   .tabs{width:100%}.tab{flex:1;text-align:center;font-size:11px;padding:6px 4px}
   .g2,.g3,.g4{grid-template-columns:1fr 1fr}
   .tbl{font-size:11px}.tbl th,.tbl td{padding:6px 4px}
-  .home-grid{grid-template-columns:1fr}
   .sv{font-size:18px}
 }
 @media(min-width:701px){.menu-btn{display:none}}
@@ -474,7 +490,7 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
 // ========== WEIGHT TAB ==========
 function WeightTab({ session, onUpdate, isAdmin }) {
   const canEdit = !!onUpdate;
-  const [form, setForm] = useState({ week: "", sampleCount: "", totalWeight: "" });
+  const [form, setForm] = useState({ age: "", sampleCount: "", totalWeight: "", note: "" });
   const [editW, setEditW] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [saved, setSaved] = useState(false);
@@ -483,17 +499,20 @@ function WeightTab({ session, onUpdate, isAdmin }) {
   const totalMort = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).mortality, 0);
   const remaining = num(session.birdCount) - totalMort;
 
-  const feedUpToWeek = (wk) => {
+  // يدعم السجلات القديمة اللي كانت مسجلة بالأسبوع بدل العمر
+  const ageOf = (w) => w.age != null && w.age !== "" ? num(w.age) : (w.week != null ? num(w.week) * 7 : 0);
+
+  const feedUpToAge = (ageDays) => {
     const start = new Date(session.startDate);
-    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 < wk * 7).reduce((s, r) => s + calcDayStats(r).feed, 0);
+    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 < ageDays).reduce((s, r) => s + calcDayStats(r).feed, 0);
   };
 
   const save = () => {
-    if (!form.week || !form.sampleCount || !form.totalWeight || !onUpdate) return;
+    if (!form.age || !form.sampleCount || !form.totalWeight || !onUpdate) return;
     const rec = { id: genId(), ...form, avgWeight: avg };
     onUpdate({ ...session, weeklyWeights: [...session.weeklyWeights, rec] });
     setSaved(true); setTimeout(() => setSaved(false), 2000);
-    setForm({ week: "", sampleCount: "", totalWeight: "" });
+    setForm({ age: "", sampleCount: "", totalWeight: "", note: "" });
   };
 
   const saveEdit = () => {
@@ -509,10 +528,12 @@ function WeightTab({ session, onUpdate, isAdmin }) {
       {editW && (
         <div className="modal-bg">
           <div className="modal">
-            <div className="modal-t">✏️ تعديل وزن أسبوع {editW.week}</div>
+            <div className="modal-t">✏️ تعديل وزن عمر {ageOf(editW)} يوم</div>
             <div className="g2" style={{ marginBottom: 12 }}>
+              <div className="fg"><label className="lbl">العمر (يوم)</label><input className="inp" type="number" value={editW.age ?? ""} onChange={e => setEditW(p => ({ ...p, age: e.target.value }))} /></div>
               <div className="fg"><label className="lbl">عدد العينة</label><input className="inp" type="number" value={editW.sampleCount} onChange={e => setEditW(p => ({ ...p, sampleCount: e.target.value }))} /></div>
               <div className="fg"><label className="lbl">إجمالي الوزن (كجم)</label><input className="inp" type="number" value={editW.totalWeight} onChange={e => setEditW(p => ({ ...p, totalWeight: e.target.value }))} /></div>
+              <div className="fg"><label className="lbl">ملاحظة</label><input className="inp" value={editW.note || ""} onChange={e => setEditW(p => ({ ...p, note: e.target.value }))} /></div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-n" style={{ flex: 1 }} onClick={() => setEditW(null)}>إلغاء</button>
@@ -523,31 +544,34 @@ function WeightTab({ session, onUpdate, isAdmin }) {
       )}
       {saved && <div className="alert alert-ok">✅ تم الحفظ</div>}
       <div className="card">
-        <div className="card-t">⚖️ تسجيل وزن أسبوعي</div>
+        <div className="card-t">⚖️ تسجيل الوزن بالعمر</div>
         <div className="g4">
-          <div className="fg"><label className="lbl">الأسبوع</label><input className="inp" type="number" placeholder="1" value={form.week} onChange={e => setForm(p => ({ ...p, week: e.target.value }))} /></div>
+          <div className="fg"><label className="lbl">العمر (يوم)</label><input className="inp" type="number" placeholder="7" value={form.age} onChange={e => setForm(p => ({ ...p, age: e.target.value }))} /></div>
           <div className="fg"><label className="lbl">عدد العينة</label><input className="inp" type="number" placeholder="50" value={form.sampleCount} onChange={e => setForm(p => ({ ...p, sampleCount: e.target.value }))} /></div>
           <div className="fg"><label className="lbl">إجمالي الوزن (كجم)</label><input className="inp" type="number" value={form.totalWeight} onChange={e => setForm(p => ({ ...p, totalWeight: e.target.value }))} /></div>
           <div className="fg"><label className="lbl">متوسط (جم) — تلقائي</label><input className="inp" value={avg ? `${avg} جم` : ""} readOnly style={{ background: C.cardAlt, color: C.accent, fontWeight: 700 }} /></div>
         </div>
+        <div className="fg" style={{ marginTop: 10 }}><label className="lbl">ملاحظة</label><input className="inp" value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} placeholder="اكتب أي ملاحظة عن هذا الوزن (اختياري)" /></div>
         {canEdit && <button className="btn btn-p btn-sm" style={{ marginTop: 10 }} onClick={save}>💾 حفظ</button>}
       </div>
       {session.weeklyWeights.length > 0 && (
         <div className="card">
-          <div className="card-t">📊 معامل التحويل الأسبوعي</div>
+          <div className="card-t">📊 معامل التحويل حسب العمر</div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
-              <thead><tr><th>الأسبوع</th><th>متوسط الوزن</th><th>إجمالي العلف</th><th>FCR</th>{canEdit && <th>إجراء</th>}</tr></thead>
+              <thead><tr><th>العمر</th><th>متوسط الوزن</th><th>إجمالي العلف</th><th>FCR</th><th>ملاحظة</th>{canEdit && <th>إجراء</th>}</tr></thead>
               <tbody>
                 {session.weeklyWeights.map(w => {
-                  const tf = feedUpToWeek(num(w.week));
+                  const ageDays = ageOf(w);
+                  const tf = feedUpToAge(ageDays);
                   const fcr = calcFCR(tf, num(w.avgWeight), remaining);
                   return (
                     <tr key={w.id}>
-                      <td>أسبوع {w.week}</td>
+                      <td>{ageDays} يوم</td>
                       <td style={{ color: C.accent, fontWeight: 700 }}>{w.avgWeight} جم</td>
                       <td>{tf.toFixed(0)} كجم</td>
                       <td><span className="badge" style={{ background: num(fcr) < 2 ? "rgba(30,140,78,.12)" : "rgba(192,57,43,.12)", color: num(fcr) < 2 ? C.green : C.red }}>{fcr}</span></td>
+                      <td style={{ fontSize: 11, color: C.muted }}>{w.note || "-"}</td>
                       {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={() => setEditW({ ...w })}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={() => setConfirm({ msg: "هتمسح الوزن ده؟", fn: () => onUpdate({ ...session, weeklyWeights: session.weeklyWeights.filter(x => x.id !== w.id) }) })}>🗑️</button>}</div></td>}
                     </tr>
                   );
@@ -576,11 +600,90 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
     })))
     .sort((a, b) => a.date > b.date ? 1 : -1);
 
-  const summary = {};
+  // ==== دمج ذكي لأسماء الأدوية المتشابهة ====
+  // 1- توحيد الحروف المتقاربة والتشكيل والمسافات
+  const normalizeMedName = (s) => (s || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[ًٌٍَُِّْـ]/g, "")
+    .toLowerCase();
+
+  // 2- شيل كلمات ووحدات الجرعة/التوقيت اللي ممكن تتكتب جوا اسم الدواء زي "12 ساعة" أو "نص جرعة"
+  const dosageWords = ["ساعة", "ساعه", "ساعات", "جرعة", "جرعه", "جرعات", "نص", "كامل", "صباحا", "صباحاً", "مساء", "مساءً", "ليل", "نهار", "يوميا", "يومي", "مرتين", "مره", "مرة"];
+  const stripDosage = (s) => {
+    let out = s;
+    dosageWords.forEach(w => { out = out.split(w).join(" "); });
+    out = out.replace(/\d+/g, " "); // شيل أي أرقام (زي 12، 24)
+    return out.replace(/\s+/g, " ").trim();
+  };
+
+  // 3- مسافةليفنشتاين لقياس التشابه بين اسمين
+  const levenshtein = (a, b) => {
+    const m = a.length, n = b.length;
+    if (!m) return n; if (!n) return m;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+    return dp[m][n];
+  };
+  const tokenize = (s) => s.split(" ").filter(Boolean);
+  const isSimilar = (a, b) => {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    // احتواء بادئة/لاحقة فقط — امتداد لنفس الكلمة (زي "اموكسي" جوا "اموكسيسيلين")
+    // من غير ما يبلع كلمة إضافية كاملة (زي "تتراسيكلين" جوا "أوكسي تتراسيكلين" أو "أموكسيسيلين" جوا "أموكسيسيلين كلافيولانيك")
+    if (a.length >= 4 && b.length >= 4) {
+      const shorter = a.length <= b.length ? a : b;
+      const longer = a.length <= b.length ? b : a;
+      let extra = null;
+      if (longer.startsWith(shorter)) extra = longer.slice(shorter.length);
+      else if (longer.endsWith(shorter)) extra = longer.slice(0, longer.length - shorter.length);
+      if (extra !== null && !extra.includes(" ") && shorter.length / longer.length >= 0.4) return true;
+    }
+    // لو الاسمين بنفس عدد الكلمات وبيختلفوا في كلمة واحدة بس قصيرة (زي حرف أو رمز مميز)، امنع الدمج
+    // ده بيحمي حالات زي "فيتامين ج" و"فيتامين ك3" — دول فيتامينات مختلفة تمامًا مش خطأ إملائي
+    const ta = tokenize(a), tb = tokenize(b);
+    if (ta.length === tb.length && ta.length > 0) {
+      const diffIdx = [];
+      for (let i = 0; i < ta.length; i++) if (ta[i] !== tb[i]) diffIdx.push(i);
+      if (diffIdx.length === 1) {
+        const t1 = ta[diffIdx[0]], t2 = tb[diffIdx[0]];
+        if (Math.min(t1.length, t2.length) <= 3) return false;
+      }
+    }
+    // خطأ إملائي بسيط بس — مش سماح بفروق كبيرة، عشان منجمعش أدوية مختلفة شكلها قريب زي "أموكسيسيلين" و"أمبيسيلين"
+    const dist = levenshtein(a, b);
+    const maxLen = Math.max(a.length, b.length);
+    const sim = maxLen > 0 ? 1 - dist / maxLen : 1;
+    return dist <= 2 && sim >= 0.85;
+  };
+
+  // 4- تجميع كل الأدوية في مجموعات حسب التشابه
+  const clusters = []; // [{ key, names:{}, count, dates:[], totalHours }]
   allMeds.forEach(m => {
-    if (!summary[m.name]) summary[m.name] = { count: 0, dates: [] };
-    summary[m.name].count++;
-    summary[m.name].dates.push(m.date);
+    const cleanKey = stripDosage(normalizeMedName(m.name)) || normalizeMedName(m.name) || "-";
+    let cluster = clusters.find(c => isSimilar(c.key, cleanKey));
+    if (!cluster) {
+      cluster = { key: cleanKey, names: {}, count: 0, dates: [], totalHours: 0 };
+      clusters.push(cluster);
+    }
+    cluster.count++;
+    cluster.dates.push(m.date);
+    cluster.totalHours += num(m.hours);
+    cluster.names[m.name] = (cluster.names[m.name] || 0) + 1;
+  });
+
+  const summary = {};
+  clusters.forEach((c, i) => {
+    const displayName = Object.entries(c.names).sort((a, b) => b[1] - a[1])[0][0];
+    summary[`cluster_${i}`] = { count: c.count, dates: c.dates, totalHours: c.totalHours, displayName, variantCount: Object.keys(c.names).length };
   });
 
   const saveEdit = () => {
@@ -601,10 +704,10 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
             <>
               <div className="a4sechead">ملخص الأدوية</div>
               <table className="a4tbl">
-                <thead><tr><th>الدواء</th><th>عدد الأيام</th><th>آخر استخدام</th></tr></thead>
+                <thead><tr><th>الدواء</th><th>عدد الأيام</th><th>إجمالي الساعات</th><th>آخر استخدام</th></tr></thead>
                 <tbody>
-                  {Object.entries(summary).map(([name, info], i) => (
-                    <tr key={i}><td><strong>{name}</strong></td><td>{info.count}</td><td>{info.dates[info.dates.length - 1]}</td></tr>
+                  {Object.entries(summary).map(([key, info], i) => (
+                    <tr key={i}><td><strong>{info.displayName}</strong></td><td>{info.count}</td><td>{info.totalHours ? `${info.totalHours} ساعة` : "-"}</td><td>{info.dates[info.dates.length - 1]}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -648,12 +751,16 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
             <div className="card-t">📊 ملخص الأدوية</div>
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><th>الدواء</th><th>عدد الأيام</th><th>آخر استخدام</th></tr></thead>
+                <thead><tr><th>الدواء</th><th>عدد الأيام</th><th>إجمالي الساعات</th><th>آخر استخدام</th></tr></thead>
                 <tbody>
-                  {Object.entries(summary).map(([name, info], i) => (
+                  {Object.entries(summary).map(([key, info], i) => (
                     <tr key={i}>
-                      <td><strong>💊 {name}</strong></td>
+                      <td>
+                        <strong>💊 {info.displayName}</strong>
+                        {info.variantCount > 1 && <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>(جمعنا {info.variantCount} أشكال كتابة متشابهة لنفس الاسم)</div>}
+                      </td>
                       <td><span className="badge by">{info.count} يوم</span></td>
+                      <td>{info.totalHours ? `${info.totalHours} ساعة` : "-"}</td>
                       <td>{info.dates[info.dates.length - 1]}</td>
                     </tr>
                   ))}
@@ -1313,9 +1420,10 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
   const lastW = (session.weeklyWeights || []).slice(-1)[0];
   const fcr = lastW ? calcFCR(totalFeed, num(lastW.avgWeight), remaining) : "-";
   const allMeds = (session.dailyRecords || []).flatMap(r => (r.medicines || []).map(m => ({ ...m, date: r.date, age: session.startDate ? Math.floor((new Date(r.date) - new Date(session.startDate)) / 86400000) : "-" })));
-  const feedUpToWeek = (wk) => {
+  const ageOfW = (w) => w.age != null && w.age !== "" ? num(w.age) : (w.week != null ? num(w.week) * 7 : 0);
+  const feedUpToAge = (ageDays) => {
     const start = new Date(session.startDate);
-    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 < wk * 7).reduce((s, r) => s + calcDayStats(r).feed, 0);
+    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 < ageDays).reduce((s, r) => s + calcDayStats(r).feed, 0);
   };
   const now = new Date();
   const reportNo = `${now.toISOString().split("T")[0].replace(/-/g, "")}-${barnName ? barnName.replace(/\D/g, "") || "1" : "1"}`;
@@ -1408,14 +1516,15 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
 
         {(session.weeklyWeights || []).length > 0 && (
           <>
-            <div className="a4sechead">الوزن الأسبوعي ومعامل التحويل</div>
+            <div className="a4sechead">الوزن حسب العمر ومعامل التحويل</div>
             <table className="a4tbl">
-              <thead><tr><th>الأسبوع</th><th>متوسط الوزن</th><th>إجمالي العلف</th><th>FCR</th></tr></thead>
+              <thead><tr><th>العمر</th><th>متوسط الوزن</th><th>إجمالي العلف</th><th>FCR</th><th>ملاحظة</th></tr></thead>
               <tbody>
                 {(session.weeklyWeights || []).map((w, i) => {
-                  const tf = feedUpToWeek(num(w.week));
+                  const ad = ageOfW(w);
+                  const tf = feedUpToAge(ad);
                   const f = calcFCR(tf, num(w.avgWeight), remaining);
-                  return (<tr key={i}><td>أسبوع {w.week}</td><td>{w.avgWeight} جم</td><td>{tf.toFixed(0)} كجم</td><td><strong>{f}</strong></td></tr>);
+                  return (<tr key={i}><td>{ad} يوم</td><td>{w.avgWeight} جم</td><td>{tf.toFixed(0)} كجم</td><td><strong>{f}</strong></td><td>{w.note || "-"}</td></tr>);
                 })}
               </tbody>
             </table>
@@ -1752,14 +1861,15 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
 
         {(s.weeklyWeights || []).length > 0 && (
           <div className="card">
-            <div className="card-t">⚖️ الوزن الأسبوعي</div>
+            <div className="card-t">⚖️ الوزن حسب العمر</div>
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><th>التاريخ التقريبي</th><th>العمر (أسبوع)</th><th>متوسط الوزن</th><th>عدد العينة</th></tr></thead>
+                <thead><tr><th>التاريخ التقريبي</th><th>العمر</th><th>متوسط الوزن</th><th>عدد العينة</th><th>ملاحظة</th></tr></thead>
                 <tbody>
                   {(s.weeklyWeights || []).map((w, i) => {
-                    const approxDate = s.startDate ? new Date(new Date(s.startDate).getTime() + num(w.week) * 7 * 86400000).toISOString().split("T")[0] : "-";
-                    return (<tr key={i}><td>{approxDate}</td><td><span className="badge by">أسبوع {w.week}</span></td><td style={{ color: C.accent, fontWeight: 700 }}>{w.avgWeight} جم</td><td>{w.sampleCount}</td></tr>);
+                    const ad = w.age != null && w.age !== "" ? num(w.age) : (w.week != null ? num(w.week) * 7 : 0);
+                    const approxDate = s.startDate ? new Date(new Date(s.startDate).getTime() + ad * 86400000).toISOString().split("T")[0] : "-";
+                    return (<tr key={i}><td>{approxDate}</td><td><span className="badge by">{ad} يوم</span></td><td style={{ color: C.accent, fontWeight: 700 }}>{w.avgWeight} جم</td><td>{w.sampleCount}</td><td style={{ fontSize: 11, color: C.muted }}>{w.note || "-"}</td></tr>);
                   })}
                 </tbody>
               </table>
@@ -1949,6 +2059,8 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
   const [showNew, setShowNew] = useState(false);
   const [uMsg, setUMsg] = useState("");
   const [confirm, setConfirm] = useState(null);
+  const [newSiteForm, setNewSiteForm] = useState({ name: "", barnCount: "" });
+  const [siteMsg, setSiteMsg] = useState("");
 
   useEffect(() => {
     if (activeTab === "backup") { setLoadingBk(true); fetchBackups().then(b => { setBackups(Array.isArray(b) ? b : []); setLoadingBk(false); }); }
@@ -1990,6 +2102,24 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
     setU(p => ({ ...p, allowed_sites: sites.includes(siteId) ? sites.filter(s => s !== siteId) : [...sites, siteId] }));
   };
 
+  const addSite = () => {
+    const name = newSiteForm.name.trim();
+    const barnCount = Math.floor(num(newSiteForm.barnCount));
+    if (!name || barnCount < 1) return;
+    if (SITES.some(s => s.name === name)) { setSiteMsg("⚠️ فيه موقع بنفس الاسم ده"); setTimeout(() => setSiteMsg(""), 3000); return; }
+    const id = "custom_" + genId();
+    const barns = Array.from({ length: barnCount }, (_, i) => `عنبر ${i + 1}`);
+    const newSite = { id, name, barns, custom: true };
+    SITES.push(newSite);
+    const d = JSON.parse(JSON.stringify(data));
+    d.customSites = [...(d.customSites || []), newSite];
+    d.sites[id] = { sessions: {}, archive: [], feedStore: { received: [], dispatched: [], returned: [] }, medStore: { received: [], returned: [] }, gasStore: { received: [] }, injections: [] };
+    barns.forEach(b => { d.sites[id].sessions[b] = null; });
+    onUpdate(d);
+    setNewSiteForm({ name: "", barnCount: "" });
+    setSiteMsg("✅ تم إضافة الموقع"); setTimeout(() => setSiteMsg(""), 3000);
+  };
+
   const UserForm = ({ u, setU, onSave, onCancel }) => (
     <div className="card" style={{ border: `1.5px solid ${C.accent}` }}>
       <div className="g2" style={{ marginBottom: 10 }}>
@@ -2029,7 +2159,31 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
       <div className="tabs">
         <button className={`tab ${activeTab === "backup" ? "active" : ""}`} onClick={() => setActiveTab("backup")}>💾 النسخ الاحتياطي</button>
         {isAdmin && <button className={`tab ${activeTab === "users" ? "active" : ""}`} onClick={() => setActiveTab("users")}>👥 المستخدمين</button>}
+        {isAdmin && <button className={`tab ${activeTab === "sites" ? "active" : ""}`} onClick={() => setActiveTab("sites")}>🏭 المواقع</button>}
       </div>
+
+      {activeTab === "sites" && isAdmin && (
+        <div>
+          {siteMsg && <div className="alert alert-ok">{siteMsg}</div>}
+          <div className="card">
+            <div className="card-t">➕ إضافة موقع جديد</div>
+            <div className="g2" style={{ marginBottom: 10 }}>
+              <div className="fg"><label className="lbl">اسم الموقع</label><input className="inp" value={newSiteForm.name} onChange={e => setNewSiteForm(p => ({ ...p, name: e.target.value }))} placeholder="مثال: مزرعة الأمل" /></div>
+              <div className="fg"><label className="lbl">عدد العنابر</label><input className="inp" type="number" min="1" value={newSiteForm.barnCount} onChange={e => setNewSiteForm(p => ({ ...p, barnCount: e.target.value }))} placeholder="مثال: 3" /></div>
+            </div>
+            <button className="btn btn-p btn-sm" onClick={addSite}>💾 إضافة الموقع</button>
+          </div>
+          <div className="card">
+            <div className="card-t">📋 المواقع الحالية</div>
+            {SITES.map(s => (
+              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 4px", borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
+                <span style={{ fontWeight: 700 }}>🏭 {s.name}</span>
+                <span style={{ color: C.muted }}>{s.barns.length} عنابر{s.custom && <span className="badge by" style={{ marginRight: 6 }}>مُضاف</span>}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {activeTab === "backup" && (
         <div>
@@ -2604,10 +2758,9 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStor
         <button onClick={() => onOpenArchive(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.muted}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.text }}>📦 الأرشيف</button>
       </div>
 
-      <div className="stats" style={{ marginBottom: 14 }}>
-        <div className="stat"><div className="sv cg">{totalBirdsNow.toLocaleString()}</div><div className="sl">🐔 إجمالي طيور الموقع الحالي</div></div>
-        <div className="stat"><div className="sv cy">{totalBirdsStart.toLocaleString()}</div><div className="sl">إجمالي الطيور عند بدء الدورات</div></div>
-        <div className="stat"><div className="sv" style={{ color: C.accent }}>{activeBarns.length}</div><div className="sl">عنابر نشطة من {site.barns.length}</div></div>
+      <div className="stats" style={{ marginBottom: 14, gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))" }}>
+        <div className="stat" style={{ padding: 8 }}><div className="sv cg" style={{ fontSize: 15 }}>{totalBirdsNow.toLocaleString()}</div><div className="sl" style={{ fontSize: 10 }}>🐔 إجمالي طيور الموقع الحالي</div></div>
+        <div className="stat" style={{ padding: 8 }}><div className="sv cy" style={{ fontSize: 15 }}>{totalBirdsStart.toLocaleString()}</div><div className="sl" style={{ fontSize: 10 }}>إجمالي الطيور عند بدء الدورات</div></div>
       </div>
 
       <div className="pg-sub">اختر العنبر</div>
@@ -2641,6 +2794,20 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStor
 }
 
 // ========== HOME PAGE ==========
+// ألوان ثابتة لكل موقع حسب ترتيبه — أي موقع جديد بياخد اللون اللي بعده تلقائي فيبقى شكله متناسق مع الباقي
+const SITE_PALETTE = [
+  { accent: "#2f6fed", g1: "#dfeaff", g2: "#a9c9ff", icon: "🏠" },
+  { accent: "#c0392b", g1: "#ffe3d9", g2: "#ffb199", icon: "🏚️" },
+  { accent: "#1e8c4e", g1: "#dcf7e6", g2: "#a8e6bf", icon: "🏡" },
+  { accent: "#8e44ad", g1: "#efdcf7", g2: "#d7aef0", icon: "🏠" },
+  { accent: "#e67e22", g1: "#ffedd9", g2: "#ffcd9c", icon: "🏚️" },
+  { accent: "#16a085", g1: "#d7f5ef", g2: "#a3e8da", icon: "🏡" },
+];
+const siteTheme = (siteId) => {
+  const idx = SITES.findIndex(s => s.id === siteId);
+  return SITE_PALETTE[(idx >= 0 ? idx : 0) % SITE_PALETTE.length];
+};
+
 function HomePage({ data, onSelectSite, onSelectBarn, allowedSites }) {
   return (
     <div>
@@ -2650,14 +2817,24 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites }) {
         {allowedSites.map(site => {
           const sd = data?.sites?.[site.id];
           const active = site.barns.filter(b => sd?.sessions?.[b]).length;
+          const theme = siteTheme(site.id);
           return (
-            <div className="site-card" key={site.id} onClick={() => onSelectSite(site.id)}>
-              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 5 }}>🏭 {site.name}</div>
-              <div style={{ fontSize: 11, color: C.muted }}>{site.barns.length} عنابر | {active} دورات نشطة</div>
-              <div className="barn-tags">
-                {site.barns.map(b => (
-                  <span key={b} className={`btag ${sd?.sessions?.[b] ? "on" : ""}`} onClick={e => { e.stopPropagation(); onSelectBarn(site.id, b); }}>{b}</span>
-                ))}
+            <div className="site-card" key={site.id} style={{ borderLeft: `5px solid ${theme.accent}` }} onClick={() => onSelectSite(site.id)}>
+              <div className="site-card-body">
+                <div className="site-card-title">{site.name} 🏠</div>
+                <div className="site-card-sub">
+                  <span className="site-card-sub-text">{site.barns.length} عنابر | {active} دورات نشطة</span>
+                  <span className="site-card-chevron">›</span>
+                </div>
+                <div className="barn-tags">
+                  {site.barns.map(b => (
+                    <span key={b} className={`btag ${sd?.sessions?.[b] ? "on" : ""}`} onClick={e => { e.stopPropagation(); onSelectBarn(site.id, b); }}><span className="dot" />{b}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="site-card-img" style={{ background: `linear-gradient(135deg, ${theme.g1}, ${theme.g2})` }}>
+                🏚️
+                <div className="emblem" style={{ color: theme.accent }}>🏭</div>
               </div>
             </div>
           );
