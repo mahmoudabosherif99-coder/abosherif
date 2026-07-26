@@ -156,57 +156,184 @@ const createUser = async (u) => { try { await fetch(`${SUPA_URL}/rest/v1/users`,
 const updateUser = async (id, u) => { try { await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${id}`, { method: "PATCH", headers: SUPA_HDR, body: JSON.stringify(u) }); } catch {} };
 const deleteUser = async (id) => { try { await fetch(`${SUPA_URL}/rest/v1/users?id=eq.${id}`, { method: "DELETE", headers: SUPA_HDR }); } catch {} };
 
+// ========== الإشعارات (Web Push) ==========
+// بيوصل إشعار لكل أجهزة المستخدمين اللي فعّلوا الإشعارات، حتى لو البرنامج مقفول تماماً على أجهزتهم
+const VAPID_PUBLIC_KEY = "BK_kuuSTp45LjleDMwIHkmTemFEZ9J5HeTPppAVHwQSKOklGMyyJGea0St4gelaPdxnFy5QwcRm6wIwtN2h9Jzg";
+
+const urlBase64ToUint8Array = (base64String) => {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+};
+
+const registerSW = async () => {
+  if (!("serviceWorker" in navigator)) return null;
+  try { return await navigator.serviceWorker.register("/sw.js"); } catch { return null; }
+};
+
+const getNotifStatus = () => (typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+
+// يفعّل الإشعارات على الجهاز الحالي ويربطه بحساب المستخدم في قاعدة البيانات
+const enablePush = async (userId) => {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") {
+    return { ok: false, err: "الجهاز أو المتصفح ده مش بيدعم الإشعارات" };
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return { ok: false, err: "لازم توافق على إذن الإشعارات من المتصفح" };
+    const reg = await registerSW();
+    if (!reg) return { ok: false, err: "تعذر تسجيل خدمة الإشعارات" };
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) });
+    }
+    const json = sub.toJSON();
+    await fetch(`${SUPA_URL}/rest/v1/push_subscriptions`, {
+      method: "POST",
+      headers: { ...SUPA_HDR, "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify({ endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth, user_id: userId, updated_at: new Date().toISOString() }),
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, err: "حصلت مشكلة أثناء تفعيل الإشعارات" };
+  }
+};
+
+// يوقف الإشعارات على الجهاز الحالي بس
+const disablePush = async () => {
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    const sub = await reg?.pushManager?.getSubscription();
+    if (sub) {
+      await fetch(`${SUPA_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`, { method: "DELETE", headers: SUPA_HDR });
+      await sub.unsubscribe();
+    }
+  } catch {}
+};
+
+// يبعث إشعار لكل المستخدمين اللي مفعّلين الإشعارات (غير اللي بعت هو نفسه، اختياري)
+const notifyAll = async (title, body, excludeUserId) => {
+  try {
+    await fetch("/.netlify/functions/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body, excludeUserId }),
+    });
+  } catch {}
+};
+
+// بيقارن نسخة البيانات القديمة بالجديدة عشان يعرف "الحاجة اللي اتسجلت فعلاً" ويكتب إشعار مفهوم عنها
+const describeChange = (oldD, newD) => {
+  try {
+    const oldSites = oldD?.sites || {};
+    const newSites = newD?.sites || {};
+    for (const siteId of Object.keys(newSites)) {
+      const os = oldSites[siteId] || {};
+      const ns = newSites[siteId] || {};
+      const site = SITES.find((s) => s.id === siteId);
+      const siteName = site?.name || "موقع";
+
+      const barns = Object.keys(ns.sessions || {});
+      for (const b of barns) {
+        const oldSess = os.sessions?.[b];
+        const newSess = ns.sessions?.[b];
+        if (!oldSess && newSess) return { title: "🐣 بدء دورة جديدة", body: `${siteName} — ${b}` };
+        if (oldSess && newSess) {
+          if ((newSess.dailyRecords || []).length > (oldSess.dailyRecords || []).length) {
+            return { title: "📝 تسجيل يومية جديد", body: `${siteName} — ${b}` };
+          }
+          if ((newSess.weeklyWeights || []).length > (oldSess.weeklyWeights || []).length) {
+            return { title: "⚖️ وزن أسبوعي جديد", body: `${siteName} — ${b}` };
+          }
+        }
+      }
+
+      for (const k of ["received", "dispatched", "returned"]) {
+        if ((ns.feedStore?.[k] || []).length > (os.feedStore?.[k] || []).length) {
+          return { title: "🌾 حركة جديدة في مخزن العلف", body: siteName };
+        }
+      }
+      for (const k of ["received", "returned"]) {
+        if ((ns.medStore?.[k] || []).length > (os.medStore?.[k] || []).length) {
+          return { title: "💊 حركة جديدة في مخزن الدواء", body: siteName };
+        }
+      }
+      if ((ns.gasStore?.received || []).length > (os.gasStore?.received || []).length) {
+        return { title: "🔥 حركة جديدة في خزان الجاز", body: siteName };
+      }
+      if ((ns.injections || []).length > (os.injections || []).length) {
+        return { title: "💉 تسجيل حقن وتقطير جديد", body: siteName };
+      }
+    }
+    if (Object.keys(newSites).length > Object.keys(oldSites).length) {
+      return { title: "🏭 تم إضافة موقع جديد", body: "" };
+    }
+  } catch {}
+  return null;
+};
+
 // ========== COLORS ==========
+// هوية بصرية "مخزن الحبوب" — خلفية قمحية دافئة + ذهبي كهرماني كلون أساسي
+// بدل الأزرق التقليدي، وألوان حالة مستوحاة من المزرعة (أخضر مرعى / أحمر طوب / تركواز حوض مياه)
 const C = {
-  bg: "#f0f2f5", card: "#ffffff", cardAlt: "#e8ecf0",
-  accent: "#1a73e8", accentD: "#1557b0",
-  green: "#1e8c4e", red: "#c0392b", blue: "#2980b9", purple: "#7b2d8b",
-  text: "#1a1a2e", muted: "#5a6375", border: "#ced6e0", input: "#f8f9fb",
+  bg: "#F1E8CB", card: "#FFFFFF", cardAlt: "#E9DCAF",
+  accent: "#9C6B1F", accentD: "#7C5417",
+  green: "#2F6B3A", red: "#9C3327", blue: "#2A5F65", purple: "#5E3A6B", orange: "#B25E17",
+  text: "#2B2318", muted: "#786B4D", border: "#D7C48C", input: "#FBF7E9",
+};
+// تحويل الكود اللوني السداسي لصيغة rgb عشان نقدر نستخدمه في rgba() بشفافية متغيرة
+const hexToRgb = (hex) => {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map(c => c + c).join("") : h, 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 };
 
 // ========== CSS ==========
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Cairo',sans-serif;background:${C.bg};color:${C.text};direction:rtl;min-height:100vh}
-::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}
 input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 
-.topbar{background:${C.card};border-bottom:2px solid ${C.accent};padding:0 14px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.topbar{background:${C.card};border-bottom:3px solid ${C.accent};padding:0 14px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(${hexToRgb(C.text)},.08)}
 .logo{font-size:18px;font-weight:800;color:${C.accent};display:flex;align-items:center;gap:8px;letter-spacing:1.5px}
 .logo-sub{font-size:10px;color:${C.muted};font-weight:600}
 .menu-btn{background:none;border:none;color:${C.text};font-size:22px;cursor:pointer;padding:4px 8px}
 
 .main{display:flex;min-height:calc(100vh - 56px)}
-.sidebar{width:240px;background:${C.card};border-left:1px solid ${C.border};padding:12px 0;flex-shrink:0;box-shadow:2px 0 6px rgba(0,0,0,.04)}
-.sec-lbl{padding:6px 14px;font-size:10px;color:${C.muted};font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:8px}
+.sidebar{width:240px;background:${C.card};border-left:1px solid ${C.border};padding:12px 0;flex-shrink:0;box-shadow:2px 0 8px rgba(${hexToRgb(C.text)},.04)}
+.sec-lbl{padding:6px 14px;font-size:10px;color:${C.muted};font-weight:800;text-transform:uppercase;letter-spacing:1.5px;margin-top:8px}
 .site-btn{width:100%;text-align:right;padding:10px 14px;background:none;border:none;color:${C.text};font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;border-right:3px solid transparent;transition:all .2s;display:flex;align-items:center;gap:7px}
-.site-btn:hover,.site-btn.active{background:${C.cardAlt};color:${C.accent};border-right-color:${C.accent}}
+.site-btn:hover,.site-btn.active{background:${C.cardAlt};color:${C.accentD};border-right-color:${C.accent}}
 .barn-btn{width:100%;text-align:right;padding:8px 14px 8px 28px;background:none;border:none;color:${C.muted};font-family:'Cairo',sans-serif;font-size:12px;font-weight:600;cursor:pointer;border-right:3px solid transparent;transition:all .2s;display:flex;align-items:center;gap:6px}
-.barn-btn:hover{color:${C.text};background:rgba(26,115,232,.05)}
-.barn-btn.active{color:${C.accent};border-right-color:${C.accent};background:rgba(26,115,232,.08)}
+.barn-btn:hover{color:${C.text};background:rgba(${hexToRgb(C.accent)},.06)}
+.barn-btn.active{color:${C.accentD};border-right-color:${C.accent};background:rgba(${hexToRgb(C.accent)},.1)}
 .dot{width:7px;height:7px;border-radius:50%;background:${C.border};flex-shrink:0}
 .dot.on{background:${C.green}}
 
 .content{flex:1;padding:18px;overflow-y:auto}
-.pg-title{font-size:18px;font-weight:800;color:${C.text};margin-bottom:3px}
-.pg-sub{font-size:11px;color:${C.muted};margin-bottom:16px;font-weight:600}
+.pg-title{font-size:18px;font-weight:900;color:${C.text};margin-bottom:3px;position:relative;padding-right:13px}
+.pg-title::before{content:"";position:absolute;right:0;top:2px;bottom:2px;width:5px;border-radius:3px;background:linear-gradient(180deg,${C.accent},${C.green})}
+.pg-sub{font-size:11px;color:${C.muted};margin-bottom:16px;font-weight:600;padding-right:13px}
 
-.card{background:${C.card};border:1px solid ${C.border};border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.card{background:${C.card};border:1px solid ${C.border};border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 5px rgba(${hexToRgb(C.text)},.05)}
 .card-t{font-size:13px;font-weight:800;color:${C.text};margin-bottom:12px;display:flex;align-items:center;gap:5px}
 
 .btn{padding:8px 16px;border-radius:8px;border:none;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:4px}
 .btn-p{background:${C.accent};color:#fff}.btn-p:hover{background:${C.accentD}}
-.btn-s{background:${C.green};color:#fff}.btn-s:hover{filter:brightness(1.1)}
-.btn-d{background:${C.red};color:#fff}.btn-d:hover{filter:brightness(1.1)}
-.btn-n{background:${C.cardAlt};color:${C.text};border:1px solid ${C.border}}.btn-n:hover{border-color:${C.accent};color:${C.accent}}
-.btn-w{background:#fff3cd;color:#856404;border:1px solid #ffc107}
+.btn-s{background:${C.green};color:#fff}.btn-s:hover{filter:brightness(1.12)}
+.btn-d{background:${C.red};color:#fff}.btn-d:hover{filter:brightness(1.12)}
+.btn-n{background:${C.cardAlt};color:${C.text};border:1px solid ${C.border}}.btn-n:hover{border-color:${C.accent};color:${C.accentD}}
+.btn-w{background:rgba(${hexToRgb(C.orange)},.13);color:${C.orange};border:1px solid rgba(${hexToRgb(C.orange)},.4)}
 .btn-sm{padding:5px 11px;font-size:11px}
 .btn-xs{padding:3px 8px;font-size:11px}
 
 .fg{display:flex;flex-direction:column;gap:4px}
-.lbl{font-size:11px;color:${C.muted};font-weight:700}
-.inp{background:${C.input};border:1.5px solid ${C.border};border-radius:8px;padding:9px 11px;color:${C.text};font-family:'Cairo',sans-serif;font-size:13px;outline:none;transition:border .2s;width:100%}
+.lbl{font-size:11px;color:${C.muted};font-weight:700;letter-spacing:.2px}
+.inp{background:${C.input};border:1.5px solid ${C.border};border-radius:8px;padding:9px 11px;color:${C.text};font-family:'Cairo',sans-serif;font-size:13px;outline:none;transition:border .2s,background .2s;width:100%}
 .inp:focus{border-color:${C.accent};background:#fff}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
@@ -215,55 +342,61 @@ input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 .shift-wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .shift-box{background:${C.cardAlt};border-radius:10px;padding:13px;border:1px solid ${C.border}}
 .shift-t{font-size:12px;font-weight:800;margin-bottom:10px}
-.night{color:#5c35d6}.day{color:#b45309}
+.night{color:${C.purple}}.day{color:${C.orange}}
 
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
-.stat{background:${C.card};border-radius:10px;padding:12px;border:1px solid ${C.border};text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.sv{font-size:20px;font-weight:800}
-.sl{font-size:11px;color:${C.muted};margin-top:3px;font-weight:600}
+.stat{background:${C.card};border-radius:10px;padding:12px;border:1px solid ${C.border};border-top:3px solid ${C.border};text-align:center;box-shadow:0 1px 4px rgba(${hexToRgb(C.text)},.04);transition:transform .15s,box-shadow .15s}
+.stat:hover{transform:translateY(-2px);box-shadow:0 4px 10px rgba(${hexToRgb(C.text)},.08)}
+.stat:has(.cg){border-top-color:${C.green}}
+.stat:has(.cr){border-top-color:${C.red}}
+.stat:has(.cy){border-top-color:${C.accent}}
+.stat:has(.cb){border-top-color:${C.blue}}
+.stat:has(.cp){border-top-color:${C.purple}}
+.sv{font-size:20px;font-weight:900;letter-spacing:.2px}
+.sl{font-size:11px;color:${C.muted};margin-top:3px;font-weight:700}
 .cg{color:${C.green}}.cr{color:${C.red}}.cy{color:${C.accent}}.cb{color:${C.blue}}.cp{color:${C.purple}}
 
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
 .tbl th{background:${C.cardAlt};padding:9px 8px;text-align:center;color:${C.text};font-weight:800;border-bottom:2px solid ${C.border}}
 .tbl td{padding:8px 8px;text-align:center;border-bottom:1px solid ${C.border};color:${C.text}}
-.tbl tr:hover td{background:rgba(26,115,232,.03)}
+.tbl tr:hover td{background:rgba(${hexToRgb(C.accent)},.04)}
 
 .tabs{display:flex;gap:3px;margin-bottom:16px;background:${C.cardAlt};padding:3px;border-radius:10px;width:fit-content;flex-wrap:wrap}
 .tab{padding:7px 14px;border-radius:7px;border:none;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;background:none;color:${C.muted}}
-.tab.active{background:${C.accent};color:#fff;box-shadow:0 2px 5px rgba(26,115,232,.3)}
+.tab.active{background:${C.accent};color:#fff;box-shadow:0 2px 6px rgba(${hexToRgb(C.accent)},.35)}
 
 .badge{display:inline-block;padding:2px 8px;border-radius:16px;font-size:11px;font-weight:700}
-.bg{background:rgba(30,140,78,.12);color:${C.green}}
-.br{background:rgba(192,57,43,.12);color:${C.red}}
-.by{background:rgba(26,115,232,.12);color:${C.accent}}
-.bb{background:rgba(41,128,185,.12);color:${C.blue}}
+.bg{background:rgba(${hexToRgb(C.green)},.12);color:${C.green}}
+.br{background:rgba(${hexToRgb(C.red)},.12);color:${C.red}}
+.by{background:rgba(${hexToRgb(C.accent)},.12);color:${C.accentD}}
+.bb{background:rgba(${hexToRgb(C.blue)},.12);color:${C.blue}}
 
 .alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;font-weight:700}
-.alert-ok{background:rgba(30,140,78,.1);border:1px solid rgba(30,140,78,.3);color:${C.green}}
-.alert-err{background:rgba(192,57,43,.1);border:1px solid rgba(192,57,43,.3);color:${C.red}}
+.alert-ok{background:rgba(${hexToRgb(C.green)},.1);border:1px solid rgba(${hexToRgb(C.green)},.3);color:${C.green}}
+.alert-err{background:rgba(${hexToRgb(C.red)},.1);border:1px solid rgba(${hexToRgb(C.red)},.3);color:${C.red}}
 
 .home-grid{display:flex;flex-direction:column;gap:16px}
-.site-card{background:${C.card};border:1.5px solid ${C.border};border-radius:16px;padding:0;cursor:pointer;transition:all .25s;box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden;display:flex;align-items:stretch;min-height:118px}
-.site-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.1)}
+.site-card{background:${C.card};border:1.5px solid ${C.border};border-radius:16px;padding:0;cursor:pointer;transition:all .25s;box-shadow:0 2px 9px rgba(${hexToRgb(C.text)},.07);overflow:hidden;display:flex;align-items:stretch;min-height:118px}
+.site-card:hover{transform:translateY(-3px);box-shadow:0 10px 22px rgba(${hexToRgb(C.text)},.12)}
 .site-card-body{flex:1;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .site-card-title{font-weight:800;font-size:15px;display:flex;align-items:center;gap:6px}
 .site-card-sub{display:flex;align-items:center;justify-content:space-between;margin-top:4px}
 .site-card-sub-text{font-size:11.5px;color:${C.muted}}
 .site-card-chevron{font-size:18px;color:${C.muted};opacity:.6}
 .site-card-img{width:104px;flex:0 0 104px;position:relative;display:flex;align-items:center;justify-content:center;font-size:36px}
-.site-card-img .emblem{position:absolute;bottom:8px;left:8px;width:30px;height:30px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 1px 5px rgba(0,0,0,.25)}
+.site-card-img .emblem{position:absolute;bottom:8px;left:8px;width:30px;height:30px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 1px 6px rgba(${hexToRgb(C.text)},.3)}
 .barn-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .btag{font-size:11px;padding:4px 11px 4px 8px;border-radius:20px;background:${C.cardAlt};color:${C.muted};border:1px solid ${C.border};font-weight:700;display:inline-flex;align-items:center;gap:5px}
 .btag .dot{width:6px;height:6px;border-radius:50%;background:${C.muted};display:inline-block}
-.btag.on{background:rgba(30,140,78,.1);color:${C.green};border-color:rgba(30,140,78,.3)}
+.btag.on{background:rgba(${hexToRgb(C.green)},.1);color:${C.green};border-color:rgba(${hexToRgb(C.green)},.3)}
 .btag.on .dot{background:${C.green}}
 
 .empty{text-align:center;padding:40px 20px;color:${C.muted}}
 .empty .ico{font-size:40px;margin-bottom:10px}
 
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;display:flex;align-items:center;justify-content:center;padding:14px}
-.modal{background:${C.card};border:1.5px solid ${C.border};border-radius:14px;padding:22px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;box-shadow:0 10px 36px rgba(0,0,0,.15)}
-.modal-t{font-size:14px;font-weight:800;color:${C.accent};margin-bottom:14px}
+.modal-bg{position:fixed;inset:0;background:rgba(${hexToRgb(C.text)},.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:14px}
+.modal{background:${C.card};border:1.5px solid ${C.border};border-radius:14px;padding:22px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(${hexToRgb(C.text)},.18)}
+.modal-t{font-size:14px;font-weight:800;color:${C.accentD};margin-bottom:14px}
 
 @media(max-width:700px){
   .sidebar{position:fixed;top:56px;right:-250px;width:240px;height:calc(100vh - 56px);z-index:300;transition:right .3s;overflow-y:auto}
@@ -479,7 +612,7 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
                       {!hideFeed && <><td>{r.night.feed || 0}</td>
                       <td>{r.day.feed || 0}</td>
                       <td><span className="badge by">{s.feed} كجم</span></td></>}
-                      <td>{(r.medicines || []).length > 0 ? <span className="badge" style={{background:"rgba(123,45,139,.12)", color:C.purple}}>{r.medicines.length} 💊</span> : "-"}</td>
+                      <td>{(r.medicines || []).length > 0 ? <span className="badge" style={{background:`rgba(${hexToRgb(C.purple)},.12)`, color:C.purple}}>{r.medicines.length} 💊</span> : "-"}</td>
                       {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={() => setEditRec({ ...r })}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={() => deleteRec(r.id)}>🗑️</button>}</div></td>}
                     </tr>
                   );
@@ -577,7 +710,7 @@ function WeightTab({ session, onUpdate, isAdmin }) {
                       <td>{ageDays} يوم</td>
                       <td style={{ color: C.accent, fontWeight: 700 }}>{w.avgWeight} جم</td>
                       <td>{tf.toFixed(0)} كجم</td>
-                      <td><span className="badge" style={{ background: num(fcr) < 2 ? "rgba(30,140,78,.12)" : "rgba(192,57,43,.12)", color: num(fcr) < 2 ? C.green : C.red }}>{fcr}</span></td>
+                      <td><span className="badge" style={{ background: num(fcr) < 2 ? `rgba(${hexToRgb(C.green)},.12)` : `rgba(${hexToRgb(C.red)},.12)`, color: num(fcr) < 2 ? C.green : C.red }}>{fcr}</span></td>
                       <td style={{ fontSize: 11, color: C.muted }}>{w.note || "-"}</td>
                       {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={() => setEditW({ ...w })}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={() => setConfirm({ msg: "هتمسح الوزن ده؟", fn: () => onUpdate({ ...session, weeklyWeights: session.weeklyWeights.filter(x => x.id !== w.id) }) })}>🗑️</button>}</div></td>}
                     </tr>
@@ -2051,9 +2184,11 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
 }
 
 // ========== SETTINGS PAGE ==========
-function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
+function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus, onEnableNotif, onDisableNotif }) {
   const isAdmin = currentUser?.role === "admin";
   const [activeTab, setActiveTab] = useState("backup");
+  const [notifMsg, setNotifMsg] = useState("");
+  const [notifBusy, setNotifBusy] = useState(false);
   const [backups, setBackups] = useState([]);
   const [loadingBk, setLoadingBk] = useState(false);
   const [bkLabel, setBkLabel] = useState("");
@@ -2187,9 +2322,58 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore }) {
       <div className="pg-title">⚙️ الإعدادات</div>
       <div className="tabs">
         <button className={`tab ${activeTab === "backup" ? "active" : ""}`} onClick={() => setActiveTab("backup")}>💾 النسخ الاحتياطي</button>
+        <button className={`tab ${activeTab === "notif" ? "active" : ""}`} onClick={() => setActiveTab("notif")}>🔔 الإشعارات</button>
         {isAdmin && <button className={`tab ${activeTab === "users" ? "active" : ""}`} onClick={() => setActiveTab("users")}>👥 المستخدمين</button>}
         {isAdmin && <button className={`tab ${activeTab === "sites" ? "active" : ""}`} onClick={() => setActiveTab("sites")}>🏭 المواقع</button>}
       </div>
+
+      {activeTab === "notif" && (
+        <div>
+          {notifMsg && <div className={`alert ${notifStatus === "granted" ? "alert-ok" : "alert-err"}`}>{notifMsg}</div>}
+          <div className="card">
+            <div className="card-t">🔔 إشعارات هذا الجهاز</div>
+            <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.9, marginBottom: 12 }}>
+              لما تفعّل الإشعارات، هيجيلك تنبيه على الجهاز ده أول ما حد يسجل أي حاجة في البرنامج (يومية، وزن، علف، دواء، جاز، حقن، دورة جديدة...) — حتى لو البرنامج مقفول، طول ما الجهاز شغال ومتصل بالنت.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>الحالة الحالية:</span>
+              {notifStatus === "granted" && <span className="badge bg">✅ مفعّلة</span>}
+              {notifStatus === "denied" && <span className="badge br">🚫 ممنوعة من المتصفح</span>}
+              {notifStatus === "default" && <span className="badge by">⚪ غير مفعّلة بعد</span>}
+              {notifStatus === "unsupported" && <span className="badge br">❌ غير مدعومة على الجهاز ده</span>}
+            </div>
+            {notifStatus === "denied" && (
+              <div style={{ fontSize: 11.5, color: C.red, marginBottom: 10, lineHeight: 1.8 }}>
+                لازم تسمح بالإشعارات يدوي من إعدادات المتصفح لموقع البرنامج (🔒 بجانب شريط العنوان) عشان تقدر تفعّلها.
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              {notifStatus !== "granted" && notifStatus !== "unsupported" && (
+                <button className="btn btn-p btn-sm" disabled={notifBusy} onClick={async () => {
+                  setNotifBusy(true); setNotifMsg("");
+                  const r = await onEnableNotif();
+                  setNotifMsg(r.ok ? "✅ تم تفعيل الإشعارات على الجهاز ده" : `⚠️ ${r.err || "تعذر التفعيل"}`);
+                  setNotifBusy(false); setTimeout(() => setNotifMsg(""), 4000);
+                }}>{notifBusy ? "..." : "🔔 تفعيل الإشعارات"}</button>
+              )}
+              {notifStatus === "granted" && (
+                <button className="btn btn-n btn-sm" disabled={notifBusy} onClick={async () => {
+                  setNotifBusy(true); await onDisableNotif(); setNotifBusy(false);
+                  setNotifMsg("🔕 تم إيقاف الإشعارات على الجهاز ده"); setTimeout(() => setNotifMsg(""), 4000);
+                }}>{notifBusy ? "..." : "🔕 إيقاف على هذا الجهاز"}</button>
+              )}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-t">ℹ️ ملاحظات مهمة</div>
+            <ul style={{ fontSize: 11.5, color: C.muted, lineHeight: 2, paddingRight: 18 }}>
+              <li>لازم تفعّل الإشعارات من كل جهاز بيستخدم فيه أي حد البرنامج (موبايل، تابلت، لابتوب) على حدة.</li>
+              <li>على الآيفون: لازم تضيف البرنامج للشاشة الرئيسية (زر المشاركة ← Add to Home Screen) الأول، وبعدين تفتحه من الأيقونة وتفعّل الإشعارات من جواه.</li>
+              <li>لو مسحت البرنامج من على الجهاز أو غيرت المتصفح، هتحتاج تفعّل الإشعارات تاني.</li>
+            </ul>
+          </div>
+        </div>
+      )}
 
       {activeTab === "sites" && isAdmin && (
         <div>
@@ -2736,7 +2920,7 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
                 {rows.map(r => (
                   <tr key={r.id}>
                     <td>{r.date}</td>
-                    <td><span className="badge" style={{ background: r.type === "حقن" ? "rgba(192,57,43,.12)" : "rgba(41,128,185,.12)", color: r.type === "حقن" ? C.red : C.blue }}>{r.type}</span></td>
+                    <td><span className="badge" style={{ background: r.type === "حقن" ? `rgba(${hexToRgb(C.red)},.12)` : `rgba(${hexToRgb(C.blue)},.12)`, color: r.type === "حقن" ? C.red : C.blue }}>{r.type}</span></td>
                     <td style={{ fontWeight: 700 }}>
                       {getMeds(r).map((m, i) => (
                         <div key={i}>💊 {m.name}{m.qty ? ` — ${m.qty}` : ""}</div>
@@ -2788,8 +2972,8 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStor
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button onClick={() => onOpenStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.accent}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.accent }}>🌾 مخزن العلف</button>
         <button onClick={() => onOpenMedStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.purple}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.purple }}>💊 مخزن الدواء</button>
-        <button onClick={() => onOpenGasStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: "1.5px solid #e67e22", borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: "#e67e22" }}>🔥 خزان الجاز</button>
-        <button onClick={() => onOpenInjections(siteId)} style={{ flex: "1 1 140px", background: C.card, border: "1.5px solid #c0392b", borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: "#c0392b" }}>💉 حقن وتقطير</button>
+        <button onClick={() => onOpenGasStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.orange}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.orange }}>🔥 خزان الجاز</button>
+        <button onClick={() => onOpenInjections(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.red}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.red }}>💉 حقن وتقطير</button>
         <button onClick={() => onOpenArchive(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.muted}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.text }}>📦 الأرشيف</button>
       </div>
 
@@ -2811,7 +2995,7 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStor
               style={{ background: C.card, border: `2px solid ${hasSession ? C.green : C.border}`, borderRadius: 14, padding: 16, cursor: "pointer", transition: "all .2s", boxShadow: "0 1px 5px rgba(0,0,0,.05)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ fontSize: 15, fontWeight: 800 }}>🐔 {barn}</div>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 16, background: hasSession ? "rgba(30,140,78,.12)" : C.cardAlt, color: hasSession ? C.green : C.muted }}>{hasSession ? "نشطة ✅" : "فارغ"}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 16, background: hasSession ? `rgba(${hexToRgb(C.green)},.12)` : C.cardAlt, color: hasSession ? C.green : C.muted }}>{hasSession ? "نشطة ✅" : "فارغ"}</span>
               </div>
               {hasSession ? (
                 <div style={{ fontSize: 11, color: C.muted }}>
@@ -2829,14 +3013,14 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStor
 }
 
 // ========== HOME PAGE ==========
-// ألوان ثابتة لكل موقع حسب ترتيبه — أي موقع جديد بياخد اللون اللي بعده تلقائي فيبقى شكله متناسق مع الباقي
+// ألوان ثابتة لكل موقع حسب ترتيبه — مشتقة من نفس هوية "مخزن الحبوب" عشان أي موقع جديد ينسجم لونياً مع الباقي
 const SITE_PALETTE = [
-  { accent: "#2f6fed", g1: "#dfeaff", g2: "#a9c9ff", icon: "🏠" },
-  { accent: "#c0392b", g1: "#ffe3d9", g2: "#ffb199", icon: "🏚️" },
-  { accent: "#1e8c4e", g1: "#dcf7e6", g2: "#a8e6bf", icon: "🏡" },
-  { accent: "#8e44ad", g1: "#efdcf7", g2: "#d7aef0", icon: "🏠" },
-  { accent: "#e67e22", g1: "#ffedd9", g2: "#ffcd9c", icon: "🏚️" },
-  { accent: "#16a085", g1: "#d7f5ef", g2: "#a3e8da", icon: "🏡" },
+  { accent: C.accent, g1: "#F3E2B4", g2: "#D9AC5C", icon: "🌾" },
+  { accent: C.green, g1: "#D9EAD9", g2: "#9CC79E", icon: "🌿" },
+  { accent: C.red, g1: "#F1DAD3", g2: "#D69C8D", icon: "🐔" },
+  { accent: C.blue, g1: "#D6E6E6", g2: "#94C0C1", icon: "💧" },
+  { accent: C.purple, g1: "#E6DAE7", g2: "#B98CBC", icon: "🏠" },
+  { accent: C.orange, g1: "#F1DFC4", g2: "#DFA968", icon: "🔥" },
 ];
 const siteTheme = (siteId) => {
   const idx = SITES.findIndex(s => s.id === siteId);
@@ -2867,8 +3051,8 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites }) {
                   ))}
                 </div>
               </div>
-              <div className="site-card-img" style={{ background: `linear-gradient(135deg, ${theme.g1}, ${theme.g2})` }}>
-                🏚️
+              <div className="site-card-img" style={{ background: `repeating-linear-gradient(45deg, rgba(${hexToRgb(theme.accent)},.14) 0px, rgba(${hexToRgb(theme.accent)},.14) 5px, transparent 5px, transparent 11px), linear-gradient(135deg, ${theme.g1}, ${theme.g2})` }}>
+                {theme.icon}
                 <div className="emblem" style={{ color: theme.accent }}>🏭</div>
               </div>
             </div>
@@ -2895,9 +3079,12 @@ export default function App() {
   const [expanded, setExpanded] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState("");
+  const [notifStatus, setNotifStatus] = useState("default");
 
   useEffect(() => {
     loadSaved().then(d => { if (d) setData(d); setLoading(false); }).catch(() => setLoading(false));
+    registerSW();
+    setNotifStatus(getNotifStatus());
     try {
       const saved = sessionStorage.getItem("current_user");
       if (saved) {
@@ -2905,6 +3092,7 @@ export default function App() {
         setCurrentUser(u);
         fetch(`${SUPA_URL}/rest/v1/users?id=eq.${u.id}&select=*`, { headers: SUPA_HDR })
           .then(r => r.json()).then(rows => { if (rows?.[0]) { setCurrentUser(rows[0]); try { sessionStorage.setItem("current_user", JSON.stringify(rows[0])); } catch {} } }).catch(() => {});
+        if (getNotifStatus() === "granted") enablePush(u.id).then(r => setNotifStatus(r.ok ? "granted" : getNotifStatus()));
       }
     } catch {}
   }, []);
@@ -2922,11 +3110,20 @@ export default function App() {
       const u = rows?.[0] || user;
       setCurrentUser(u);
       try { sessionStorage.setItem("current_user", JSON.stringify(u)); } catch {}
+      enablePush(u.id).then(r => setNotifStatus(r.ok ? "granted" : getNotifStatus()));
     } catch { setCurrentUser(user); try { sessionStorage.setItem("current_user", JSON.stringify(user)); } catch {} }
   };
 
   const handleLogout = () => { setCurrentUser(null); try { sessionStorage.removeItem("current_user"); } catch {} };
-  const updateData = (d) => setData(mergeData(d));
+  const updateData = (d) => {
+    const merged = mergeData(d);
+    const change = describeChange(data, merged);
+    if (change) {
+      const who = currentUser?.username ? `${currentUser.username} — ` : "";
+      notifyAll(change.title, `${who}${change.body}`, currentUser?.id);
+    }
+    setData(merged);
+  };
 
   const allowedSites = currentUser?.role === "admin" || !(currentUser?.allowed_sites?.length) ? SITES : SITES.filter(s => currentUser.allowed_sites.includes(s.id));
   const canEdit = currentUser?.role === "admin" || currentUser?.can_edit;
@@ -2955,7 +3152,7 @@ export default function App() {
 
   const renderContent = () => {
     try {
-      if (showSettings) return <SettingsPage currentUser={currentUser} data={data} onUpdate={updateData} onDataRestore={d => setData(mergeData(d))} />;
+      if (showSettings) return <SettingsPage currentUser={currentUser} data={data} onUpdate={updateData} onDataRestore={d => setData(mergeData(d))} notifStatus={notifStatus} onEnableNotif={async () => { const r = await enablePush(currentUser.id); setNotifStatus(r.ok ? "granted" : getNotifStatus()); return r; }} onDisableNotif={async () => { await disablePush(); setNotifStatus(getNotifStatus()); }} />;
       if (showArchive && selectedSite) return <ArchivePage data={data} onUpdate={updateData} siteId={selectedSite} onBack={() => { setShowArchive(false); }} currentUser={currentUser} isAdmin={isAdmin} />;
       if (showStore && selectedSite) return <SiteStorePage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowStore(false)} />;
       if (showMedStore && selectedSite) return <MedStorePage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowMedStore(false)} />;

@@ -4,8 +4,8 @@
   "description": "Mazarie Abo Sherif - Poultry Management",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f6f9",
-  "theme_color": "#1a73e8",
+  "background_color": "#F1E8CB",
+  "theme_color": "#9C6B1F",
   "orientation": "portrait",
   "icons": [
     {
