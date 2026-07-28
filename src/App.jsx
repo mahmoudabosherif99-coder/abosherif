@@ -1272,13 +1272,20 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
   const medStore = data?.sites?.[siteId]?.medStore || { received: [], returned: [] };
   const receivedList = medStore.received || [];
   const returnedList = medStore.returned || [];
-  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], name: "", qty: "", unit: "مل", notes: "" });
-  const [retForm, setRetForm] = useState({ date: new Date().toISOString().split("T")[0], name: "", qty: "", unit: "مل", notes: "" });
+  const emptyItem = () => ({ id: genId(), name: "", qty: "", unit: "مل" });
+  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], notes: "", items: [emptyItem()] });
+  const [retForm, setRetForm] = useState({ date: new Date().toISOString().split("T")[0], notes: "", items: [emptyItem()] });
   const [editRec, setEditRec] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [saved, setSaved] = useState("");
   const [showReport, setShowReport] = useState(false);
   const [search, setSearch] = useState("");
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedRec, setSelectedRec] = useState(null);
+
+  const updateItem = (setter, id, field, val) => setter(p => ({ ...p, items: p.items.map(it => it.id === id ? { ...it, [field]: val } : it) }));
+  const addItemRow = (setter) => setter(p => ({ ...p, items: [...p.items, emptyItem()] }));
+  const removeItemRow = (setter, id) => setter(p => ({ ...p, items: p.items.length > 1 ? p.items.filter(it => it.id !== id) : p.items }));
 
   const deepUpdate = (newReceived, newReturned) => {
     if (!onUpdate) return;
@@ -1289,17 +1296,25 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
   };
 
   const addRec = () => {
-    if (!form.name || !form.qty || !canEdit) return;
-    deepUpdate([...receivedList, { id: genId(), ...form }], undefined);
+    if (!canEdit) return;
+    const validItems = form.items.filter(it => it.name && it.qty);
+    if (validItems.length === 0) return;
+    const invoiceId = genId();
+    const newRecords = validItems.map(it => ({ id: genId(), invoiceId, date: form.date, name: it.name.trim(), qty: it.qty, unit: it.unit, notes: form.notes }));
+    deepUpdate([...receivedList, ...newRecords], undefined);
     setSaved("received"); setTimeout(() => setSaved(""), 2000);
-    setForm(p => ({ ...p, name: "", qty: "", notes: "" }));
+    setForm({ date: form.date, notes: "", items: [emptyItem()] });
   };
 
   const addReturn = () => {
-    if (!retForm.name || !retForm.qty || !canEdit) return;
-    deepUpdate(undefined, [...returnedList, { id: genId(), ...retForm }]);
+    if (!canEdit) return;
+    const validItems = retForm.items.filter(it => it.name && it.qty);
+    if (validItems.length === 0) return;
+    const invoiceId = genId();
+    const newRecords = validItems.map(it => ({ id: genId(), invoiceId, date: retForm.date, name: it.name.trim(), qty: it.qty, unit: it.unit, notes: retForm.notes }));
+    deepUpdate(undefined, [...returnedList, ...newRecords]);
     setSaved("returned"); setTimeout(() => setSaved(""), 2000);
-    setRetForm(p => ({ ...p, name: "", qty: "", notes: "" }));
+    setRetForm({ date: retForm.date, notes: "", items: [emptyItem()] });
   };
 
   const saveEdit = () => {
@@ -1394,29 +1409,45 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
 
       {canEdit && (
         <div className="card">
-          <div className="card-t">📥 إضافة وارد دواء</div>
-          <div className="g3">
-            <div className="fg"><label className="lbl">التاريخ</label><input className="inp" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">اسم الدواء</label><input className="inp" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">الكمية</label><input className="inp" type="number" value={form.qty} onChange={e => setForm(p => ({ ...p, qty: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">الوحدة</label><select className="inp" value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))}><option value="مل">مل</option><option value="جم">جم</option><option value="كجم">كجم</option><option value="لتر">لتر</option><option value="عبوة">عبوة</option></select></div>
-            <div className="fg"><label className="lbl">ملاحظات</label><input className="inp" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
+          <div className="card-t">📥 إضافة وارد دواء (فاتورة)</div>
+          <div className="g2" style={{ marginBottom: 10 }}>
+            <div className="fg"><label className="lbl">تاريخ الفاتورة</label><input className="inp" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
+            <div className="fg"><label className="lbl">ملاحظات على الفاتورة (اختياري)</label><input className="inp" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="مثال: فاتورة رقم..." /></div>
           </div>
-          <button className="btn btn-s btn-sm" style={{ marginTop: 10 }} onClick={addRec}>+ إضافة</button>
+          {form.items.map((it, idx) => (
+            <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8, flexWrap: "wrap", background: C.cardAlt, padding: 10, borderRadius: 8, border: `1px solid ${C.border}` }}>
+              <div className="fg" style={{ flex: "2 1 140px" }}><label className="lbl">صنف {idx + 1}</label><input className="inp" value={it.name} onChange={e => updateItem(setForm, it.id, "name", e.target.value)} placeholder="اسم الدواء" /></div>
+              <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الكمية</label><input className="inp" type="number" value={it.qty} onChange={e => updateItem(setForm, it.id, "qty", e.target.value)} /></div>
+              <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الوحدة</label><select className="inp" value={it.unit} onChange={e => updateItem(setForm, it.id, "unit", e.target.value)}><option value="مل">مل</option><option value="جم">جم</option><option value="كجم">كجم</option><option value="لتر">لتر</option><option value="عبوة">عبوة</option></select></div>
+              {form.items.length > 1 && <button className="btn btn-d btn-xs" onClick={() => removeItemRow(setForm, it.id)}>🗑️</button>}
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+            <button className="btn btn-n btn-sm" onClick={() => addItemRow(setForm)}>➕ إضافة صنف تاني</button>
+            <button className="btn btn-s btn-sm" onClick={addRec}>💾 حفظ الفاتورة ({form.items.filter(i => i.name && i.qty).length} صنف)</button>
+          </div>
         </div>
       )}
 
       {canEdit && (
         <div className="card">
-          <div className="card-t">↩️ مرتجع للمكتب</div>
-          <div className="g3">
+          <div className="card-t">↩️ مرتجع للمكتب (فاتورة)</div>
+          <div className="g2" style={{ marginBottom: 10 }}>
             <div className="fg"><label className="lbl">التاريخ</label><input className="inp" type="date" value={retForm.date} onChange={e => setRetForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">اسم الدواء</label><input className="inp" value={retForm.name} onChange={e => setRetForm(p => ({ ...p, name: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">الكمية</label><input className="inp" type="number" value={retForm.qty} onChange={e => setRetForm(p => ({ ...p, qty: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">الوحدة</label><select className="inp" value={retForm.unit} onChange={e => setRetForm(p => ({ ...p, unit: e.target.value }))}><option value="مل">مل</option><option value="جم">جم</option><option value="كجم">كجم</option><option value="لتر">لتر</option><option value="عبوة">عبوة</option></select></div>
-            <div className="fg"><label className="lbl">ملاحظات</label><input className="inp" value={retForm.notes} onChange={e => setRetForm(p => ({ ...p, notes: e.target.value }))} /></div>
+            <div className="fg"><label className="lbl">ملاحظات (اختياري)</label><input className="inp" value={retForm.notes} onChange={e => setRetForm(p => ({ ...p, notes: e.target.value }))} /></div>
           </div>
-          <button className="btn btn-d btn-sm" style={{ marginTop: 10 }} onClick={addReturn}>↩️ تسجيل مرتجع</button>
+          {retForm.items.map((it, idx) => (
+            <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8, flexWrap: "wrap", background: C.cardAlt, padding: 10, borderRadius: 8, border: `1px solid ${C.border}` }}>
+              <div className="fg" style={{ flex: "2 1 140px" }}><label className="lbl">صنف {idx + 1}</label><input className="inp" value={it.name} onChange={e => updateItem(setRetForm, it.id, "name", e.target.value)} placeholder="اسم الدواء" /></div>
+              <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الكمية</label><input className="inp" type="number" value={it.qty} onChange={e => updateItem(setRetForm, it.id, "qty", e.target.value)} /></div>
+              <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الوحدة</label><select className="inp" value={it.unit} onChange={e => updateItem(setRetForm, it.id, "unit", e.target.value)}><option value="مل">مل</option><option value="جم">جم</option><option value="كجم">كجم</option><option value="لتر">لتر</option><option value="عبوة">عبوة</option></select></div>
+              {retForm.items.length > 1 && <button className="btn btn-d btn-xs" onClick={() => removeItemRow(setRetForm, it.id)}>🗑️</button>}
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+            <button className="btn btn-n btn-sm" onClick={() => addItemRow(setRetForm)}>➕ إضافة صنف تاني</button>
+            <button className="btn btn-d btn-sm" onClick={addReturn}>↩️ حفظ المرتجع ({retForm.items.filter(i => i.name && i.qty).length} صنف)</button>
+          </div>
         </div>
       )}
 
@@ -1432,9 +1463,14 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
           <table className="tbl">
             <thead><tr><th>الدواء</th><th>إجمالي الوارد</th><th>مرتجع للمكتب</th><th>الرصيد</th><th>الوحدة</th></tr></thead>
             <tbody>
-              {filteredTotals.map((it, i) => (
-                <tr key={i}><td style={{ fontWeight: 700 }}>💊 {it.name}</td><td style={{ color: C.green }}>+{it.in}</td><td style={{ color: C.red }}>-{it.ret}</td><td><span className="badge by">{it.total}</span></td><td>{it.unit}</td></tr>
-              ))}
+              {filteredTotals.map((it, i) => {
+                const isSel = selectedItem === it.name;
+                return (
+                  <tr key={i} onClick={() => setSelectedItem(isSel ? null : it.name)} style={{ cursor: "pointer", background: isSel ? `rgba(${hexToRgb(C.accent)},.2)` : undefined, outline: isSel ? `2px solid ${C.accent}` : "none", outlineOffset: -2, transition: "background .15s" }}>
+                    <td style={{ fontWeight: 700 }}>💊 {it.name}</td><td style={{ color: C.green }}>+{it.in}</td><td style={{ color: C.red }}>-{it.ret}</td><td><span className="badge by">{it.total}</span></td><td>{it.unit}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -1447,17 +1483,20 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
             <table className="tbl">
               <thead><tr><th>التاريخ</th><th>النوع</th><th>الدواء</th><th>الكمية</th><th>الوحدة</th><th>ملاحظات</th>{canEdit && <th>إجراء</th>}</tr></thead>
               <tbody>
-                {filteredRows.map(r => (
-                  <tr key={r.id}>
-                    <td>{r.date}</td>
-                    <td>{r._type === "received" ? <span className="badge bg">وارد</span> : <span className="badge br">مرتجع للمكتب</span>}</td>
-                    <td style={{ fontWeight: 700 }}>💊 {r.name}</td>
-                    <td style={{ color: r._type === "received" ? C.green : C.red }}>{r._type === "received" ? "+" : "-"}{r.qty}</td>
-                    <td>{r.unit}</td>
-                    <td>{r.notes || "-"}</td>
-                    {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={() => setEditRec({ ...r })}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={() => deleteEntry(r._type, r.id)}>🗑️</button>}</div></td>}
-                  </tr>
-                ))}
+                {filteredRows.map(r => {
+                  const isSel = selectedRec === r.id;
+                  return (
+                    <tr key={r.id} onClick={() => setSelectedRec(isSel ? null : r.id)} style={{ cursor: "pointer", background: isSel ? `rgba(${hexToRgb(C.accent)},.2)` : undefined, outline: isSel ? `2px solid ${C.accent}` : "none", outlineOffset: -2, transition: "background .15s" }}>
+                      <td>{r.date}</td>
+                      <td>{r._type === "received" ? <span className="badge bg">وارد</span> : <span className="badge br">مرتجع للمكتب</span>}</td>
+                      <td style={{ fontWeight: 700 }}>💊 {r.name}</td>
+                      <td style={{ color: r._type === "received" ? C.green : C.red }}>{r._type === "received" ? "+" : "-"}{r.qty}</td>
+                      <td>{r.unit}</td>
+                      <td>{r.notes || "-"}</td>
+                      {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={e => { e.stopPropagation(); setEditRec({ ...r }); }}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={e => { e.stopPropagation(); deleteEntry(r._type, r.id); }}>🗑️</button>}</div></td>}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
