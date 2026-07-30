@@ -1,4 +1,4 @@
-const webpush = require("web-push");
+import webpush from "web-push";
 
 const SUPA_URL = "https://devxozrfoxvypllmhijj.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRldnhvenJmb3h2eXBsbG1oaWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTA1NzgsImV4cCI6MjA5Njc4NjU3OH0.JnYQyOnYf501SjkNtMBp1GGyLhtQQ8gAY6ElXnjrVRk";
@@ -12,8 +12,8 @@ webpush.setVapidDetails("mailto:admin@abosherif-farms.com", VAPID_PUBLIC, VAPID_
 const supaHeaders = { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
 
 // نسخة Vercel من فانكشن الإشعارات (بديل لـ netlify/functions/send-push.js)
-// Vercel بيشغّل أي ملف داخل /api تلقائي كـ Serverless Function بصيغة (req, res)
-module.exports = async (req, res) => {
+// بصيغة ES Module عشان package.json فيه "type": "module"
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -64,4 +64,4 @@ module.exports = async (req, res) => {
   const failed = results.length - sent;
 
   res.status(200).json({ total: subs.length, sent, failed });
-};
+}
