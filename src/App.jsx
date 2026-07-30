@@ -216,7 +216,7 @@ const disablePush = async () => {
 // يبعث إشعار لكل المستخدمين اللي مفعّلين الإشعارات (غير اللي بعت هو نفسه، اختياري)
 const notifyAll = async (title, body, excludeUserId) => {
   try {
-    await fetch("/.netlify/functions/send-push", {
+    await fetch("/api/send-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, body, excludeUserId }),
