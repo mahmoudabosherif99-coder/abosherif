@@ -70,9 +70,10 @@ const calcDayStats = (r) => ({
   feed: num(r.night.feed) + num(r.day.feed),
 });
 
-const calcAge = (startDate) => {
+const calcAge = (startDate, endDate) => {
   if (!startDate) return 0;
-  return Math.floor((new Date() - new Date(startDate)) / 86400000);
+  const end = endDate ? new Date(endDate) : new Date();
+  return Math.floor((end - new Date(startDate)) / 86400000);
 };
 
 const calcFCR = (totalFeed, avgWeightG, birds) => {
@@ -473,7 +474,7 @@ function Login({ onLogin }) {
 
 // ========== DAILY TAB ==========
 // ========== DAILY TAB ==========
-function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord, onDeleteRecord, isAdmin }) {
+function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord, onEditRecord, onDeleteRecord, isAdmin }) {
   const canEdit = !!onUpdate;
   const today = new Date().toISOString().split("T")[0];
   const hideFeed = siteId === "qatour"; // عنبر قطور: بدون تسجيل علف في الشفتين
@@ -481,8 +482,10 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
   const [medForm, setMedForm] = useState({ name: "", hours: "" });
   const [saved, setSaved] = useState(false);
   const [editRec, setEditRec] = useState(null);
+  const [editMedForm, setEditMedForm] = useState({ name: "", hours: "" });
   const [confirm, setConfirm] = useState(null);
   const [err, setErr] = useState("");
+  const [editErr, setEditErr] = useState("");
 
   const setShift = (s, f, v) => setForm(p => ({ ...p, [s]: { ...p[s], [f]: v } }));
 
@@ -501,9 +504,20 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
   };
 
   const saveEdit = () => {
-    if (!onUpdate || !editRec) return;
-    onUpdate({ ...session, dailyRecords: session.dailyRecords.map(r => r.id === editRec.id ? editRec : r) });
+    if (!editRec) return;
+    if (onEditRecord) {
+      const result = onEditRecord(editRec.id, editRec);
+      if (!result.ok) { setEditErr(result.err || "حدث خطأ"); setTimeout(() => setEditErr(""), 4000); return; }
+    } else if (onUpdate) {
+      onUpdate({ ...session, dailyRecords: session.dailyRecords.map(r => r.id === editRec.id ? editRec : r) });
+    }
     setEditRec(null);
+  };
+
+  const addEditMed = () => {
+    if (!editMedForm.name.trim()) return;
+    setEditRec(p => ({ ...p, medicines: [...(p.medicines || []), { id: genId(), name: editMedForm.name.trim(), hours: editMedForm.hours }] }));
+    setEditMedForm({ name: "", hours: "" });
   };
 
   const deleteRec = (id) => {
@@ -520,7 +534,8 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
         <div className="modal-bg">
           <div className="modal">
             <div className="modal-t">✏️ تعديل السجل — {editRec.date}</div>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>ملاحظة: تعديل كمية العلف/النافق هنا لا يغيّر المخزون تلقائياً</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>تعديل كمية العلف هنا بيتحدث تلقائياً في مخزن العلف بتاع الموقع</div>
+            {editErr && <div className="alert alert-err" style={{ marginBottom: 10 }}>⚠️ {editErr}</div>}
             <div className="shift-wrap">
               {["night", "day"].map(s => (
                 <div className="shift-box" key={s}>
@@ -532,8 +547,25 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
                 </div>
               ))}
             </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label className="lbl" style={{ display: "block", marginBottom: 6 }}>💊 أدوية اليوم ده</label>
+              <div className="g2" style={{ marginBottom: 8 }}>
+                <div className="fg"><input className="inp" placeholder="اسم الدواء" value={editMedForm.name} onChange={e => setEditMedForm(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === "Enter" && addEditMed()} /></div>
+                <div className="fg"><input className="inp" type="number" placeholder="عدد الساعات" value={editMedForm.hours} onChange={e => setEditMedForm(p => ({ ...p, hours: e.target.value }))} onKeyDown={e => e.key === "Enter" && addEditMed()} /></div>
+              </div>
+              <button className="btn btn-n btn-sm" onClick={addEditMed}>+ إضافة دواء</button>
+              {(editRec.medicines || []).map((m, i) => (
+                <div key={m.id || i} style={{ display: "flex", gap: 8, padding: "5px 10px", background: C.input, borderRadius: 6, marginTop: 6, fontSize: 11, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700 }}>💊 {m.name}</span>
+                  {m.hours && <span className="badge by">⏱️ {m.hours} ساعة</span>}
+                  <button style={{ marginRight: "auto", background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 13 }} onClick={() => setEditRec(p => ({ ...p, medicines: p.medicines.filter((_, j) => j !== i) }))}>✕</button>
+                </div>
+              ))}
+            </div>
+
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button className="btn btn-n" style={{ flex: 1 }} onClick={() => setEditRec(null)}>إلغاء</button>
+              <button className="btn btn-n" style={{ flex: 1 }} onClick={() => { setEditRec(null); setEditErr(""); }}>إلغاء</button>
               <button className="btn btn-p" style={{ flex: 1 }} onClick={saveEdit}>💾 حفظ</button>
             </div>
           </div>
@@ -913,22 +945,31 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
             <div className="card-t">📅 سجل الأدوية يوم بيوم</div>
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>العمر</th><th>الدواء</th><th>عدد الساعات</th>{(onEditMed || onDeleteMed) && <th>إجراء</th>}</tr></thead>
+                <thead><tr><th>التاريخ</th><th>العمر</th><th>الأدوية</th></tr></thead>
                 <tbody>
-                  {allMeds.map((m, i) => (
+                  {Object.entries(allMeds.reduce((acc, m) => {
+                    (acc[m.date] = acc[m.date] || []).push(m);
+                    return acc;
+                  }, {})).sort((a, b) => a[0] > b[0] ? -1 : 1).map(([date, meds], i) => (
                     <tr key={i}>
-                      <td>{m.date}</td>
-                      <td><span className="badge by">{m.age} يوم</span></td>
-                      <td style={{ color: "#7b2d8b", fontWeight: 700 }}>💊 {m.name}</td>
-                      <td>{m.hours ? `${m.hours} ساعة` : "-"}</td>
-                      {(onEditMed || onDeleteMed) && (
-                        <td>
-                          <div style={{ display: "flex", gap: 3 }}>
-                            {onEditMed && <button className="btn btn-n btn-xs" onClick={() => setEditEntry({ ...m })}>✏️</button>}
-                            {onDeleteMed && <button className="btn btn-d btn-xs" onClick={() => setConfirm({ msg: `هتمسح دواء "${m.name}" من يوم ${m.date}؟`, fn: () => onDeleteMed(m.recordId, m.id) })}>🗑️</button>}
-                          </div>
-                        </td>
-                      )}
+                      <td>{date}</td>
+                      <td><span className="badge by">{meds[0].age} يوم</span></td>
+                      <td>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {meds.map((m, j) => (
+                            <div key={j} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <span style={{ color: "#7b2d8b", fontWeight: 700 }}>💊 {m.name}</span>
+                              {m.hours && <span className="badge by">⏱️ {m.hours} ساعة</span>}
+                              {(onEditMed || onDeleteMed) && (
+                                <span style={{ display: "flex", gap: 3 }}>
+                                  {onEditMed && <button className="btn btn-n btn-xs" onClick={() => setEditEntry({ ...m })}>✏️</button>}
+                                  {onDeleteMed && <button className="btn btn-d btn-xs" onClick={() => setConfirm({ msg: `هتمسح دواء "${m.name}" من يوم ${m.date}؟`, fn: () => onDeleteMed(m.recordId, m.id) })}>🗑️</button>}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1009,7 +1050,7 @@ function SummaryTab({ session }) {
   const totalFeed = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).feed, 0);
   const remaining = num(session.birdCount) - totalMort;
   const mortRate = session.birdCount ? ((totalMort / num(session.birdCount)) * 100).toFixed(2) : 0;
-  const age = calcAge(session.startDate);
+  const age = calcAge(session.startDate, session.endDate);
   const lastW = (session.weeklyWeights || []).slice(-1)[0];
   const fcr = lastW ? calcFCR(totalFeed, num(lastW.avgWeight), remaining) : "-";
 
@@ -1595,7 +1636,7 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
   const totalFeed = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).feed, 0);
   const remaining = num(session.birdCount) - totalMort;
   const mortRate = session.birdCount ? ((totalMort / num(session.birdCount)) * 100).toFixed(2) : 0;
-  const age = calcAge(session.startDate);
+  const age = calcAge(session.startDate, session.endDate);
   const lastW = (session.weeklyWeights || []).slice(-1)[0];
   const fcr = lastW ? calcFCR(totalFeed, num(lastW.avgWeight), remaining) : "-";
   const allMeds = (session.dailyRecords || []).flatMap(r => (r.medicines || []).map(m => ({ ...m, date: r.date, age: session.startDate ? Math.floor((new Date(r.date) - new Date(session.startDate)) / 86400000) : "-" })));
@@ -1819,6 +1860,42 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
     return { ok: true };
   };
 
+  // Edits a daily record (mortality/feed/medicines) AND keeps the feed store balance in sync
+  const editDailyRecord = (recordId, updatedRecord) => {
+    if (!onUpdate) return { ok: false, err: "لا تملك صلاحية" };
+    const d = JSON.parse(JSON.stringify(data));
+    const fs = d.sites[siteId].feedStore || { received: [], dispatched: [], returned: [] };
+    const recs = d.sites[siteId].sessions[barnName].dailyRecords;
+    const oldRec = recs.find(r => r.id === recordId);
+    if (!oldRec) return { ok: false, err: "السجل غير موجود" };
+
+    const oldFeed = num(oldRec.night.feed) + num(oldRec.day.feed);
+    const newFeed = num(updatedRecord.night.feed) + num(updatedRecord.day.feed);
+    const entry = fs.dispatched.find(x => x.barn === barnName && x.date === oldRec.date && x.item === "علف (استهلاك يومي)" && num(x.qty) === oldFeed);
+
+    if (newFeed !== oldFeed) {
+      const totalIn = (fs.received || []).reduce((s, r) => s + num(r.qty), 0);
+      const totalOut = (fs.dispatched || []).reduce((s, r) => s + num(r.qty), 0);
+      const totalReturned = (fs.returned || []).reduce((s, r) => s + num(r.qty), 0);
+      const currentBalance = totalIn - totalOut - totalReturned;
+      const extraNeeded = newFeed - oldFeed;
+      if (extraNeeded > 0 && currentBalance < extraNeeded) return { ok: false, err: "الكمية المتاحة في مخزن العلف غير كافية للتعديل!" };
+      if (entry) {
+        if (newFeed > 0) { entry.qty = newFeed; entry.date = updatedRecord.date; }
+        else fs.dispatched = fs.dispatched.filter(x => x !== entry);
+      } else if (newFeed > 0) {
+        fs.dispatched.push({ id: genId(), date: updatedRecord.date, barn: barnName, item: "علف (استهلاك يومي)", qty: newFeed });
+      }
+    } else if (entry && updatedRecord.date !== oldRec.date) {
+      entry.date = updatedRecord.date;
+    }
+
+    d.sites[siteId].feedStore = fs;
+    d.sites[siteId].sessions[barnName].dailyRecords = recs.map(r => r.id === recordId ? updatedRecord : r);
+    onUpdate(d);
+    return { ok: true };
+  };
+
   // Reverts feed stock when a daily record is deleted, and removes the record
   const deleteDailyRecord = (recordId) => {
     if (!onUpdate) return;
@@ -1935,7 +2012,7 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
       </div>
 
       {activeTab === "daySummary" && <DaySummaryTab session={session} hideFeed={siteId === "qatour"} />}
-      {activeTab === "daily" && <DailyTab session={session} siteId={siteId} onUpdate={canEdit ? deepUpdateSession : null} feedStore={siteData.feedStore} medStore={siteData.medStore} onSaveRecord={canEdit ? saveDailyRecord : null} onDeleteRecord={isAdmin ? deleteDailyRecord : null} isAdmin={isAdmin} />}
+      {activeTab === "daily" && <DailyTab session={session} siteId={siteId} onUpdate={canEdit ? deepUpdateSession : null} feedStore={siteData.feedStore} medStore={siteData.medStore} onSaveRecord={canEdit ? saveDailyRecord : null} onEditRecord={canEdit ? editDailyRecord : null} onDeleteRecord={isAdmin ? deleteDailyRecord : null} isAdmin={isAdmin} />}
       {activeTab === "weight" && <WeightTab session={session} onUpdate={canEdit ? deepUpdateSession : null} isAdmin={isAdmin} />}
       {activeTab === "medicine" && <MedicineTab session={session} onEditMed={canEdit ? editMedInRecord : null} onDeleteMed={isAdmin ? deleteMedFromRecord : null} barnName={barnName} siteName={siteName} currentUser={currentUser} />}
       {activeTab === "summary" && <SummaryTab session={session} />}
@@ -1946,11 +2023,27 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
 // ========== ARCHIVE PAGE ==========
 function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
   const [selectedArchive, setSelectedArchive] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [showReport, setShowReport] = useState(false);
   const site = SITES.find(s => s.id === siteId);
 
   const allArchived = (data?.sites?.[siteId]?.archive || []).map((s, idx) => ({ ...s, siteName: site.name, siteId, idx }));
+
+  // تجميع عنابر نفس الدورة مع بعض (العنابر اللي بدأت في نفس التاريخ = دورة واحدة)
+  const groups = {};
+  allArchived.forEach(s => {
+    const key = s.startDate || "بدون تاريخ";
+    if (!groups[key]) groups[key] = { startDate: s.startDate, items: [] };
+    groups[key].items.push(s);
+  });
+  const groupList = Object.entries(groups).map(([key, g]) => {
+    const endDateDisp = g.items.reduce((max, it) => {
+      const d = it.endDate || it.archivedAt?.split("T")[0] || "";
+      return d > max ? d : max;
+    }, "");
+    return { ...g, key, endDate: endDateDisp };
+  }).sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
 
   const oldArchivesCount = (data?.sites?.[siteId]?.archive || []).filter(s => !s.feedStoreSnapshot).length;
 
@@ -2184,6 +2277,45 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
     );
   }
 
+  // ===== صفحة الدورة: العنابر جوا، والتاريخ برا =====
+  if (selectedGroup) {
+    const g = groups[selectedGroup];
+    if (!g) { setSelectedGroup(null); return null; }
+    return (
+      <div>
+        {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+          <button className="btn btn-n btn-sm" onClick={() => setSelectedGroup(null)}>← رجوع</button>
+          <div className="pg-title" style={{ margin: 0 }}>📦 دورة {site.name}</div>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>📅 تاريخ البداية: <strong>{g.startDate}</strong></div>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>📅 تاريخ النهاية: <strong>{g.endDate || "-"}</strong></div>
+        </div>
+        <div className="pg-sub">اختار العنبر لعرض تفاصيله</div>
+        {g.items.map(s => {
+          const tm = (s.dailyRecords || []).reduce((x, r) => x + calcDayStats(r).mortality, 0);
+          const tf = (s.dailyRecords || []).reduce((x, r) => x + calcDayStats(r).feed, 0);
+          return (
+            <div key={s.idx} onClick={() => setSelectedArchive({ idx: s.idx })}
+              style={{ background: C.card, borderRadius: 10, padding: 14, marginBottom: 10, border: `1px solid ${C.border}`, cursor: "pointer", transition: "all .2s" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                <div>
+                  <div style={{ fontWeight: 700, marginBottom: 3, fontSize: 13 }}>🐔 {s.barnName}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>طيور: {num(s.birdCount).toLocaleString()} | نافق: {tm} | علف: {tf} كجم</div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <span className="badge by">منتهية</span>
+                  <button className="btn btn-d btn-xs" onClick={e => { e.stopPropagation(); deleteArchive(s.siteId, s.idx); }}>🗑️</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div>
       {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
@@ -2194,26 +2326,22 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
           <button className="btn btn-w btn-sm" style={{ marginRight: "auto" }} onClick={migrateOldArchives}>🔄 تحديث {oldArchivesCount} دورة قديمة (إضافة أرشفة المخازن)</button>
         )}
       </div>
-      <div className="pg-sub">اضغط على دورة لعرض التفاصيل</div>
-      {allArchived.length === 0 ? (
+      <div className="pg-sub">اضغط على دورة لعرض العنابر</div>
+      {groupList.length === 0 ? (
         <div className="empty"><div className="ico">📭</div><p>لا توجد دورات مؤرشفة في هذا الموقع</p></div>
-      ) : allArchived.map(s => {
-        const tm = (s.dailyRecords || []).reduce((x, r) => x + calcDayStats(r).mortality, 0);
-        const tf = (s.dailyRecords || []).reduce((x, r) => x + calcDayStats(r).feed, 0);
-        const endDateDisp = s.endDate || s.archivedAt?.split("T")[0];
-        const age = s.startDate && endDateDisp ? Math.round((new Date(endDateDisp) - new Date(s.startDate)) / 86400000) : 0;
+      ) : groupList.map((g, gi) => {
+        const tm = g.items.reduce((x, s) => x + (s.dailyRecords || []).reduce((y, r) => y + calcDayStats(r).mortality, 0), 0);
+        const tf = g.items.reduce((x, s) => x + (s.dailyRecords || []).reduce((y, r) => y + calcDayStats(r).feed, 0), 0);
+        const tb = g.items.reduce((x, s) => x + num(s.birdCount), 0);
         return (
-          <div key={s.idx} onClick={() => setSelectedArchive({ idx: s.idx })}
+          <div key={gi} onClick={() => setSelectedGroup(g.key)}
             style={{ background: C.card, borderRadius: 10, padding: 14, marginBottom: 10, border: `1px solid ${C.border}`, cursor: "pointer", transition: "all .2s" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
               <div>
-                <div style={{ fontWeight: 700, marginBottom: 3, fontSize: 13 }}>🐔 {s.barnName}</div>
-                <div style={{ fontSize: 11, color: C.muted }}>بداية: {s.startDate} | نهاية: {endDateDisp} | مدة: {age} يوم | طيور: {num(s.birdCount).toLocaleString()} | نافق: {tm} | علف: {tf} كجم</div>
+                <div style={{ fontWeight: 700, marginBottom: 3, fontSize: 13 }}>📦 دورة {g.items.length > 1 ? `(${g.items.length} عنابر)` : `— ${g.items[0].barnName}`}</div>
+                <div style={{ fontSize: 11, color: C.muted }}>بداية: {g.startDate} | نهاية: {g.endDate || "-"} | طيور: {tb.toLocaleString()} | نافق: {tm} | علف: {tf} كجم</div>
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <span className="badge by">منتهية</span>
-                <button className="btn btn-d btn-xs" onClick={e => { e.stopPropagation(); deleteArchive(s.siteId, s.idx); }}>🗑️</button>
-              </div>
+              <span className="badge by">منتهية</span>
             </div>
           </div>
         );
@@ -3102,6 +3230,107 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites }) {
   );
 }
 
+// ========== AI ASSISTANT ==========
+// بيلخص بيانات المزرعة كلها في نص مختصر يتبعت للمساعد الذكي كسياق
+const buildFarmSummary = (data) => {
+  const lines = [];
+  SITES.forEach(site => {
+    const siteData = data?.sites?.[site.id];
+    if (!siteData) return;
+    site.barns.forEach(barn => {
+      const session = siteData.sessions?.[barn];
+      if (!session || !session.active) return;
+      const age = calcAge(session.startDate);
+      let mort = 0, feed = 0;
+      (session.dailyRecords || []).forEach(r => {
+        mort += num(r.night?.mortality) + num(r.day?.mortality);
+        feed += num(r.night?.feed) + num(r.day?.feed);
+      });
+      const birds = num(session.birdCount);
+      const survivors = Math.max(birds - mort, 0);
+      const mortRate = birds ? ((mort / birds) * 100).toFixed(1) : "0";
+      const lastWeight = (session.weeklyWeights || []).slice(-1)[0];
+      const fcr = lastWeight?.avgWeight ? calcFCR(feed, lastWeight.avgWeight, survivors) : "-";
+      lines.push(`${site.name} / ${barn}: عمر ${age} يوم، عدد الطيور ${birds || "-"}، النافق ${mort} (${mortRate}%)، إجمالي العلف ${feed.toFixed(0)} كجم، آخر متوسط وزن ${lastWeight?.avgWeight || "-"} جم، FCR تقريبي ${fcr}`);
+    });
+    const fs = siteData.feedStore || { received: [], dispatched: [], returned: [] };
+    const balance = (fs.received || []).reduce((s, r) => s + num(r.qty), 0) - (fs.dispatched || []).reduce((s, r) => s + num(r.qty), 0) - (fs.returned || []).reduce((s, r) => s + num(r.qty), 0);
+    if (fs.received?.length || fs.dispatched?.length) lines.push(`رصيد مخزن العلف في ${site.name}: ${balance.toFixed(0)} كجم`);
+  });
+  return lines.length ? lines.join("\n") : "مفيش دفعات نشطة دلوقتي في أي موقع.";
+};
+
+function AiChatPage({ data, onBack }) {
+  const [messages, setMessages] = useState([
+    { role: "assistant", content: "أهلاً 👋 أنا المساعد الذكي بتاع مزارع أبوشريف. اسألني عن أي رقم في المزرعة، أو اطلب مني تحليل الأداء." },
+  ]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    const newMessages = [...messages, { role: "user", content: text }];
+    setMessages(newMessages);
+    setInput("");
+    setSending(true);
+    try {
+      const r = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          history: newMessages.slice(0, -1).slice(-8),
+          context: buildFarmSummary(data),
+        }),
+      });
+      const j = await r.json();
+      setMessages(m => [...m, { role: "assistant", content: j.reply || "معرفتش أجاوب دلوقتي، جرب تاني." }]);
+    } catch {
+      setMessages(m => [...m, { role: "assistant", content: "⚠️ في مشكلة في الاتصال، جرب تاني." }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 140px)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <div className="pg-title" style={{ margin: 0 }}>🤖 المساعد الذكي</div>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "4px 2px" }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            alignSelf: m.role === "user" ? "flex-start" : "flex-end",
+            maxWidth: "85%",
+            background: m.role === "user" ? C.cardAlt : C.accent + "22",
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+            padding: "8px 12px",
+            fontSize: 13,
+            whiteSpace: "pre-wrap",
+            lineHeight: 1.6,
+          }}>{m.content}</div>
+        ))}
+        {sending && <div style={{ alignSelf: "flex-end", fontSize: 12, color: C.muted }}>بيكتب...</div>}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <input
+          className="inp"
+          style={{ flex: 1 }}
+          placeholder="اسأل عن أي حاجة في المزرعة..."
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") send(); }}
+          disabled={sending}
+        />
+        <button className="btn btn-p" onClick={send} disabled={sending || !input.trim()}>إرسال</button>
+      </div>
+    </div>
+  );
+}
+
 // ========== MAIN APP ==========
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -3115,6 +3344,7 @@ export default function App() {
   const [showGasStore, setShowGasStore] = useState(false);
   const [showInjections, setShowInjections] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAiChat, setShowAiChat] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState("");
@@ -3168,14 +3398,14 @@ export default function App() {
   const canEdit = currentUser?.role === "admin" || currentUser?.can_edit;
   const isAdmin = currentUser?.role === "admin";
 
-  const goHome = () => { setSelectedSite(null); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setSidebarOpen(false); };
-  const selectSite = (id) => { setSelectedSite(id); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setExpanded(e => ({ ...e, [id]: true })); setSidebarOpen(false); };
-  const selectBarn = (siteId, barn) => { setSelectedSite(siteId); setSelectedBarn(barn); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setExpanded(e => ({ ...e, [siteId]: true })); setSidebarOpen(false); };
-  const openStore = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(true); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); };
-  const openMedStore = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(true); setShowGasStore(false); setShowInjections(false); setShowSettings(false); };
-  const openGasStore = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(true); setShowInjections(false); setShowSettings(false); };
-  const openInjections = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(true); setShowSettings(false); };
-  const openArchive = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(true); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); };
+  const goHome = () => { setSelectedSite(null); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); setSidebarOpen(false); };
+  const selectSite = (id) => { setSelectedSite(id); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); setExpanded(e => ({ ...e, [id]: true })); setSidebarOpen(false); };
+  const selectBarn = (siteId, barn) => { setSelectedSite(siteId); setSelectedBarn(barn); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); setExpanded(e => ({ ...e, [siteId]: true })); setSidebarOpen(false); };
+  const openStore = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(true); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); };
+  const openMedStore = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(true); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); };
+  const openGasStore = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(true); setShowInjections(false); setShowSettings(false); setShowAiChat(false); };
+  const openInjections = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(true); setShowSettings(false); setShowAiChat(false); };
+  const openArchive = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(true); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); };
 
   const deleteSite = (siteId) => {
     const d = JSON.parse(JSON.stringify(data));
@@ -3191,6 +3421,7 @@ export default function App() {
 
   const renderContent = () => {
     try {
+      if (showAiChat) return <AiChatPage data={data} onBack={() => setShowAiChat(false)} />;
       if (showSettings) return <SettingsPage currentUser={currentUser} data={data} onUpdate={updateData} onDataRestore={d => setData(mergeData(d))} notifStatus={notifStatus} onEnableNotif={async () => { const r = await enablePush(currentUser.id); setNotifStatus(r.ok ? "granted" : getNotifStatus()); return r; }} onDisableNotif={async () => { await disablePush(); setNotifStatus(getNotifStatus()); }} />;
       if (showArchive && selectedSite) return <ArchivePage data={data} onUpdate={updateData} siteId={selectedSite} onBack={() => { setShowArchive(false); }} currentUser={currentUser} isAdmin={isAdmin} />;
       if (showStore && selectedSite) return <SiteStorePage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowStore(false)} />;
@@ -3258,7 +3489,10 @@ export default function App() {
           ))}
           <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 10, paddingTop: 6 }}>
             <div className="sec-lbl">👤 {currentUser?.username} — {currentUser?.role === "admin" ? "مدير" : currentUser?.can_edit ? "محرر" : "مشاهد"}</div>
-            <button className={`barn-btn ${showSettings ? "active" : ""}`} onClick={() => { setShowSettings(true); setShowArchive(false); setSelectedBarn(null); setShowStore(false); setSidebarOpen(false); }}>
+            <button className={`barn-btn ${showAiChat ? "active" : ""}`} onClick={() => { setShowAiChat(true); setShowSettings(false); setShowArchive(false); setSelectedBarn(null); setShowStore(false); setSidebarOpen(false); }}>
+              <span className="dot" style={{ background: C.accent }} />🤖 المساعد الذكي
+            </button>
+            <button className={`barn-btn ${showSettings ? "active" : ""}`} onClick={() => { setShowSettings(true); setShowAiChat(false); setShowArchive(false); setSelectedBarn(null); setShowStore(false); setSidebarOpen(false); }}>
               <span className="dot" style={{ background: C.purple }} />⚙️ الإعدادات
             </button>
             <button className="barn-btn" onClick={handleLogout}>
