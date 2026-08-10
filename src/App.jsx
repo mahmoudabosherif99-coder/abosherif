@@ -945,31 +945,22 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
             <div className="card-t">📅 سجل الأدوية يوم بيوم</div>
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>العمر</th><th>الأدوية</th></tr></thead>
+                <thead><tr><th>التاريخ</th><th>العمر</th><th>الدواء</th><th>عدد الساعات</th>{(onEditMed || onDeleteMed) && <th>إجراء</th>}</tr></thead>
                 <tbody>
-                  {Object.entries(allMeds.reduce((acc, m) => {
-                    (acc[m.date] = acc[m.date] || []).push(m);
-                    return acc;
-                  }, {})).sort((a, b) => a[0] > b[0] ? -1 : 1).map(([date, meds], i) => (
+                  {allMeds.map((m, i) => (
                     <tr key={i}>
-                      <td>{date}</td>
-                      <td><span className="badge by">{meds[0].age} يوم</span></td>
-                      <td>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          {meds.map((m, j) => (
-                            <div key={j} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              <span style={{ color: "#7b2d8b", fontWeight: 700 }}>💊 {m.name}</span>
-                              {m.hours && <span className="badge by">⏱️ {m.hours} ساعة</span>}
-                              {(onEditMed || onDeleteMed) && (
-                                <span style={{ display: "flex", gap: 3 }}>
-                                  {onEditMed && <button className="btn btn-n btn-xs" onClick={() => setEditEntry({ ...m })}>✏️</button>}
-                                  {onDeleteMed && <button className="btn btn-d btn-xs" onClick={() => setConfirm({ msg: `هتمسح دواء "${m.name}" من يوم ${m.date}؟`, fn: () => onDeleteMed(m.recordId, m.id) })}>🗑️</button>}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </td>
+                      <td>{m.date}</td>
+                      <td><span className="badge by">{m.age} يوم</span></td>
+                      <td style={{ color: "#7b2d8b", fontWeight: 700 }}>💊 {m.name}</td>
+                      <td>{m.hours ? `${m.hours} ساعة` : "-"}</td>
+                      {(onEditMed || onDeleteMed) && (
+                        <td>
+                          <div style={{ display: "flex", gap: 3 }}>
+                            {onEditMed && <button className="btn btn-n btn-xs" onClick={() => setEditEntry({ ...m })}>✏️</button>}
+                            {onDeleteMed && <button className="btn btn-d btn-xs" onClick={() => setConfirm({ msg: `هتمسح دواء "${m.name}" من يوم ${m.date}؟`, fn: () => onDeleteMed(m.recordId, m.id) })}>🗑️</button>}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
