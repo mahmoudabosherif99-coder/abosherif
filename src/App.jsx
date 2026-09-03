@@ -676,7 +676,7 @@ function WeightTab({ session, onUpdate, isAdmin }) {
 
   const feedUpToAge = (ageDays) => {
     const start = new Date(session.startDate);
-    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 < ageDays).reduce((s, r) => s + calcDayStats(r).feed, 0);
+    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 <= ageDays).reduce((s, r) => s + calcDayStats(r).feed, 0);
   };
 
   const formFeedToAge = form.age ? feedUpToAge(num(form.age)) : 0;
@@ -1648,7 +1648,7 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
   const ageOfW = (w) => w.age != null && w.age !== "" ? num(w.age) : (w.week != null ? num(w.week) * 7 : 0);
   const feedUpToAge = (ageDays) => {
     const start = new Date(session.startDate);
-    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 < ageDays).reduce((s, r) => s + calcDayStats(r).feed, 0);
+    return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 <= ageDays).reduce((s, r) => s + calcDayStats(r).feed, 0);
   };
   const now = new Date();
   const reportNo = `${now.toISOString().split("T")[0].replace(/-/g, "")}-${barnName ? barnName.replace(/\D/g, "") || "1" : "1"}`;
