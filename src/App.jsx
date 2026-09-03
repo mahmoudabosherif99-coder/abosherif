@@ -679,6 +679,9 @@ function WeightTab({ session, onUpdate, isAdmin }) {
     return (session.dailyRecords || []).filter(r => (new Date(r.date) - start) / 86400000 < ageDays).reduce((s, r) => s + calcDayStats(r).feed, 0);
   };
 
+  const formFeedToAge = form.age ? feedUpToAge(num(form.age)) : 0;
+  const formFcr = form.age && avg ? calcFCR(formFeedToAge, num(avg), remaining) : "-";
+
   const save = () => {
     if (!form.age || !form.sampleCount || !form.totalWeight || !onUpdate) return;
     const rec = { id: genId(), ...form, avgWeight: avg };
@@ -724,6 +727,12 @@ function WeightTab({ session, onUpdate, isAdmin }) {
           <div className="fg"><label className="lbl">متوسط (جم) — تلقائي</label><input className="inp" value={avg ? `${avg} جم` : ""} readOnly style={{ background: C.cardAlt, color: C.accent, fontWeight: 700 }} /></div>
         </div>
         <div className="fg" style={{ marginTop: 10 }}><label className="lbl">ملاحظة</label><input className="inp" value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} placeholder="اكتب أي ملاحظة عن هذا الوزن (اختياري)" /></div>
+        {form.age && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>📦 إجمالي العلف حتى عمر {form.age} يوم: <strong>{formFeedToAge.toFixed(0)} كجم</strong></div>
+            {avg && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>⚖️ FCR المتوقع: <strong style={{ color: num(formFcr) < 2 ? C.green : C.red }}>{formFcr}</strong></div>}
+          </div>
+        )}
         {canEdit && <button className="btn btn-p btn-sm" style={{ marginTop: 10 }} onClick={save}>💾 حفظ</button>}
       </div>
       {session.weeklyWeights.length > 0 && (
