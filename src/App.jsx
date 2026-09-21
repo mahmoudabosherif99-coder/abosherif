@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 // ========== CONSTANTS ==========
 const SITES = [
   { id: "qatour", name: "عنبر قطور", barns: ["عنبر 1"] },
-  { id: "sayari", name: "مزرعة الصيري", barns: ["عنبر 1", "عنبر 2", "عنبر 3"] },
+  { id: "sayari", name: "مزرعة العزبة", barns: ["عنبر 1", "عنبر 2", "عنبر 3"] },
   { id: "elwad", name: "مزرعة الوادي", barns: ["عنبر 1", "عنبر 2", "عنبر 3", "عنبر 4"] },
   { id: "taha", name: "عنبر طه", barns: ["عنبر 1", "عنبر 2", "عنبر 3", "عنبر 4"] },
 ];
@@ -80,6 +80,51 @@ const calcFCR = (totalFeed, avgWeightG, birds) => {
   if (!avgWeightG || !birds || !totalFeed) return "-";
   const meat = (num(avgWeightG) / 1000) * num(birds);
   return meat ? (totalFeed / meat).toFixed(2) : "-";
+};
+
+// ========== ALERTS ==========
+// يفحص كل المواقع والعنابر النشطة ويطلع إنذارات: ارتفاع نسبة النافق اليومي، أو انخفاض العلف عن متوسط آخر 3 أيام
+const getFarmAlerts = (data) => {
+  const alerts = [];
+  SITES.forEach(site => {
+    const siteData = data?.sites?.[site.id];
+    if (!siteData) return;
+    site.barns.forEach(barn => {
+      const session = siteData.sessions?.[barn];
+      if (!session) return;
+      const recs = [...(session.dailyRecords || [])].sort((a, b) => a.date > b.date ? 1 : -1);
+      if (recs.length === 0) return;
+      const birdCount = num(session.birdCount);
+      const last = recs[recs.length - 1];
+      const lastStats = calcDayStats(last);
+
+      // 1) إنذار ارتفاع نسبة النافق في يوم واحد عن 1% من إجمالي طيور العنبر
+      if (birdCount > 0) {
+        const dayMortRate = (lastStats.mortality / birdCount) * 100;
+        if (dayMortRate > 1) {
+          alerts.push({ siteName: site.name, barn, type: "mortality", message: `نسبة النافق في ${last.date} وصلت ${dayMortRate.toFixed(2)}% (${lastStats.mortality} طائر) — تعدت حد الـ 1% من إجمالي طيور العنبر` });
+        }
+      }
+
+      // 2) إنذار انخفاض العلف مقارنة بمتوسط آخر 3 أيام السابقة
+      if (recs.length >= 4) {
+        const prev3 = recs.slice(-4, -1);
+        const avgPrev3 = prev3.reduce((s, r) => s + calcDayStats(r).feed, 0) / prev3.length;
+        if (avgPrev3 > 0 && lastStats.feed < avgPrev3) {
+          const dropPct = (((avgPrev3 - lastStats.feed) / avgPrev3) * 100).toFixed(0);
+          alerts.push({ siteName: site.name, barn, type: "feed", message: `العلف في ${last.date} (${lastStats.feed.toFixed(0)} كجم) أقل من متوسط آخر 3 أيام (${avgPrev3.toFixed(0)} كجم) بنسبة ${dropPct}%` });
+        }
+      }
+    });
+  });
+  return alerts;
+};
+
+// يدمج مصفوفات من نفس النوع من عنابر مختلفة بدون تكرار (بالاعتماد على id) — يُستخدم لعرض مخزن موحد لكل دورة
+const mergeById = (...arrays) => {
+  const map = new Map();
+  arrays.flat().forEach(item => { if (item && item.id != null) map.set(item.id, item); });
+  return [...map.values()];
 };
 
 // ========== SUPABASE ==========
@@ -1318,9 +1363,9 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
   const medStore = data?.sites?.[siteId]?.medStore || { received: [], returned: [] };
   const receivedList = medStore.received || [];
   const returnedList = medStore.returned || [];
-  const emptyItem = () => ({ id: genId(), name: "", qty: "", unit: "مل" });
-  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], notes: "", items: [emptyItem()] });
-  const [retForm, setRetForm] = useState({ date: new Date().toISOString().split("T")[0], notes: "", items: [emptyItem()] });
+  const emptyItem = () => ({ id: genId(), name: "", qty: "", unit: "مل", notes: "" });
+  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], items: [emptyItem()] });
+  const [retForm, setRetForm] = useState({ date: new Date().toISOString().split("T")[0], items: [emptyItem()] });
   const [editRec, setEditRec] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [saved, setSaved] = useState("");
@@ -1346,10 +1391,10 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
     const validItems = form.items.filter(it => it.name && it.qty);
     if (validItems.length === 0) return;
     const invoiceId = genId();
-    const newRecords = validItems.map(it => ({ id: genId(), invoiceId, date: form.date, name: it.name.trim(), qty: it.qty, unit: it.unit, notes: form.notes }));
+    const newRecords = validItems.map(it => ({ id: genId(), invoiceId, date: form.date, name: it.name.trim(), qty: it.qty, unit: it.unit, notes: it.notes || "" }));
     deepUpdate([...receivedList, ...newRecords], undefined);
     setSaved("received"); setTimeout(() => setSaved(""), 2000);
-    setForm({ date: form.date, notes: "", items: [emptyItem()] });
+    setForm({ date: form.date, items: [emptyItem()] });
   };
 
   const addReturn = () => {
@@ -1357,10 +1402,10 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
     const validItems = retForm.items.filter(it => it.name && it.qty);
     if (validItems.length === 0) return;
     const invoiceId = genId();
-    const newRecords = validItems.map(it => ({ id: genId(), invoiceId, date: retForm.date, name: it.name.trim(), qty: it.qty, unit: it.unit, notes: retForm.notes }));
+    const newRecords = validItems.map(it => ({ id: genId(), invoiceId, date: retForm.date, name: it.name.trim(), qty: it.qty, unit: it.unit, notes: it.notes || "" }));
     deepUpdate(undefined, [...returnedList, ...newRecords]);
     setSaved("returned"); setTimeout(() => setSaved(""), 2000);
-    setRetForm({ date: retForm.date, notes: "", items: [emptyItem()] });
+    setRetForm({ date: retForm.date, items: [emptyItem()] });
   };
 
   const saveEdit = () => {
@@ -1456,15 +1501,13 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
       {canEdit && (
         <div className="card">
           <div className="card-t">📥 إضافة وارد دواء (فاتورة)</div>
-          <div className="g2" style={{ marginBottom: 10 }}>
-            <div className="fg"><label className="lbl">تاريخ الفاتورة</label><input className="inp" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">ملاحظات على الفاتورة (اختياري)</label><input className="inp" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="مثال: فاتورة رقم..." /></div>
-          </div>
+          <div className="fg" style={{ marginBottom: 10, maxWidth: 220 }}><label className="lbl">تاريخ الفاتورة</label><input className="inp" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
           {form.items.map((it, idx) => (
             <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8, flexWrap: "wrap", background: C.cardAlt, padding: 10, borderRadius: 8, border: `1px solid ${C.border}` }}>
               <div className="fg" style={{ flex: "2 1 140px" }}><label className="lbl">صنف {idx + 1}</label><input className="inp" value={it.name} onChange={e => updateItem(setForm, it.id, "name", e.target.value)} placeholder="اسم الدواء" /></div>
               <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الكمية</label><input className="inp" type="number" value={it.qty} onChange={e => updateItem(setForm, it.id, "qty", e.target.value)} /></div>
               <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الوحدة</label><select className="inp" value={it.unit} onChange={e => updateItem(setForm, it.id, "unit", e.target.value)}><option value="مل">مل</option><option value="جم">جم</option><option value="كجم">كجم</option><option value="لتر">لتر</option><option value="عبوة">عبوة</option></select></div>
+              <div className="fg" style={{ flex: "2 1 140px" }}><label className="lbl">ملاحظة على الصنف (اختياري)</label><input className="inp" value={it.notes} onChange={e => updateItem(setForm, it.id, "notes", e.target.value)} placeholder="مثال: رقم التشغيلة..." /></div>
               {form.items.length > 1 && <button className="btn btn-d btn-xs" onClick={() => removeItemRow(setForm, it.id)}>🗑️</button>}
             </div>
           ))}
@@ -1478,15 +1521,13 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
       {canEdit && (
         <div className="card">
           <div className="card-t">↩️ مرتجع للمكتب (فاتورة)</div>
-          <div className="g2" style={{ marginBottom: 10 }}>
-            <div className="fg"><label className="lbl">التاريخ</label><input className="inp" type="date" value={retForm.date} onChange={e => setRetForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">ملاحظات (اختياري)</label><input className="inp" value={retForm.notes} onChange={e => setRetForm(p => ({ ...p, notes: e.target.value }))} /></div>
-          </div>
+          <div className="fg" style={{ marginBottom: 10, maxWidth: 220 }}><label className="lbl">التاريخ</label><input className="inp" type="date" value={retForm.date} onChange={e => setRetForm(p => ({ ...p, date: e.target.value }))} /></div>
           {retForm.items.map((it, idx) => (
             <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 8, flexWrap: "wrap", background: C.cardAlt, padding: 10, borderRadius: 8, border: `1px solid ${C.border}` }}>
               <div className="fg" style={{ flex: "2 1 140px" }}><label className="lbl">صنف {idx + 1}</label><input className="inp" value={it.name} onChange={e => updateItem(setRetForm, it.id, "name", e.target.value)} placeholder="اسم الدواء" /></div>
               <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الكمية</label><input className="inp" type="number" value={it.qty} onChange={e => updateItem(setRetForm, it.id, "qty", e.target.value)} /></div>
               <div className="fg" style={{ flex: "1 1 90px" }}><label className="lbl">الوحدة</label><select className="inp" value={it.unit} onChange={e => updateItem(setRetForm, it.id, "unit", e.target.value)}><option value="مل">مل</option><option value="جم">جم</option><option value="كجم">كجم</option><option value="لتر">لتر</option><option value="عبوة">عبوة</option></select></div>
+              <div className="fg" style={{ flex: "2 1 140px" }}><label className="lbl">ملاحظة على الصنف (اختياري)</label><input className="inp" value={it.notes} onChange={e => updateItem(setRetForm, it.id, "notes", e.target.value)} /></div>
               {retForm.items.length > 1 && <button className="btn btn-d btn-xs" onClick={() => removeItemRow(setRetForm, it.id)}>🗑️</button>}
             </div>
           ))}
@@ -2029,6 +2070,7 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
 function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
   const [selectedArchive, setSelectedArchive] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
+  const [groupView, setGroupView] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [showReport, setShowReport] = useState(false);
   const site = SITES.find(s => s.id === siteId);
@@ -2286,17 +2328,145 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
   if (selectedGroup) {
     const g = groups[selectedGroup];
     if (!g) { setSelectedGroup(null); return null; }
+
+    const feedSnap = { received: mergeById(...g.items.map(s => s.feedStoreSnapshot?.received || [])), dispatched: mergeById(...g.items.map(s => s.feedStoreSnapshot?.dispatched || [])), returned: mergeById(...g.items.map(s => s.feedStoreSnapshot?.returned || [])) };
+    const medSnap = { received: mergeById(...g.items.map(s => s.medStoreSnapshot?.received || [])), returned: mergeById(...g.items.map(s => s.medStoreSnapshot?.returned || [])) };
+    const gasSnap = mergeById(...g.items.map(s => s.gasSnapshot || []));
+    const injSnap = mergeById(...g.items.map(s => s.injectionsSnapshot || []));
+
+    if (groupView) {
+      const backBtn = <button className="btn btn-n btn-sm" onClick={() => setGroupView(null)}>← رجوع لعناصر الدورة</button>;
+      if (groupView === "feed") {
+        const totalIn = feedSnap.received.reduce((s, r) => s + num(r.qty), 0);
+        const totalOut = feedSnap.dispatched.reduce((s, r) => s + num(r.qty), 0);
+        const totalRet = feedSnap.returned.reduce((s, r) => s + num(r.qty), 0);
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>{backBtn}<div className="pg-title" style={{ margin: 0 }}>🌾 مخزن العلف — دورة {g.startDate}</div></div>
+            <div className="stats" style={{ marginBottom: 14 }}>
+              <div className="stat"><div className="sv cg">{totalIn.toFixed(0)} كجم</div><div className="sl">إجمالي الوارد</div></div>
+              <div className="stat"><div className="sv cr">{totalOut.toFixed(0)} كجم</div><div className="sl">إجمالي الصادر</div></div>
+              <div className="stat"><div className="sv cy">{(totalIn - totalOut - totalRet).toFixed(0)} كجم</div><div className="sl">الرصيد المتبقي</div></div>
+            </div>
+            <div className="card"><div className="card-t">📋 سجل الحركة</div><div style={{ overflowX: "auto" }}>
+              <table className="tbl"><thead><tr><th>التاريخ</th><th>النوع</th><th>العنبر</th><th>الكمية</th></tr></thead>
+                <tbody>
+                  {[...feedSnap.received.map(r => ({ ...r, _t: "وارد" })), ...feedSnap.dispatched.map(r => ({ ...r, _t: "صرف" })), ...feedSnap.returned.map(r => ({ ...r, _t: "مرتجع" }))].sort((a, b) => a.date > b.date ? 1 : -1).map((r, i) => (
+                    <tr key={i}><td>{r.date}</td><td>{r._t}</td><td>{r.barn || "-"}</td><td>{r._t === "وارد" ? "+" : "-"}{r.qty}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div></div>
+          </div>
+        );
+      }
+      if (groupView === "med") {
+        const totalIn = medSnap.received.reduce((s, r) => s + num(r.qty), 0);
+        const totalRet = medSnap.returned.reduce((s, r) => s + num(r.qty), 0);
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>{backBtn}<div className="pg-title" style={{ margin: 0 }}>💊 مخزن الدواء — دورة {g.startDate}</div></div>
+            <div className="card"><div className="card-t">📋 سجل الوارد والمرتجع</div><div style={{ overflowX: "auto" }}>
+              <table className="tbl"><thead><tr><th>التاريخ</th><th>النوع</th><th>الدواء</th><th>الكمية</th><th>الوحدة</th></tr></thead>
+                <tbody>
+                  {[...medSnap.received.map(r => ({ ...r, _t: "وارد" })), ...medSnap.returned.map(r => ({ ...r, _t: "مرتجع" }))].sort((a, b) => a.date > b.date ? 1 : -1).map((r, i) => (
+                    <tr key={i}><td>{r.date}</td><td>{r._t}</td><td>{r.name}</td><td>{r._t === "وارد" ? "+" : "-"}{r.qty}</td><td>{r.unit}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div></div>
+          </div>
+        );
+      }
+      if (groupView === "gas") {
+        const totalIn = gasSnap.reduce((s, r) => s + num(r.qty), 0);
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>{backBtn}<div className="pg-title" style={{ margin: 0 }}>🔥 خزان الجاز — دورة {g.startDate}</div></div>
+            <div className="stats" style={{ marginBottom: 14 }}><div className="stat"><div className="sv cy">{totalIn.toFixed(0)} لتر</div><div className="sl">إجمالي الجاز الوارد</div></div></div>
+            <div className="card"><div className="card-t">📋 سجل الوارد</div><div style={{ overflowX: "auto" }}>
+              <table className="tbl"><thead><tr><th>التاريخ</th><th>الكمية</th></tr></thead>
+                <tbody>{gasSnap.sort((a, b) => a.date > b.date ? 1 : -1).map((r, i) => (<tr key={i}><td>{r.date}</td><td>+{r.qty} لتر</td></tr>))}</tbody>
+              </table>
+            </div></div>
+          </div>
+        );
+      }
+      if (groupView === "inj") {
+        const antibiotic = injSnap.filter(r => (r.category || "antibiotic") === "antibiotic").sort((a, b) => a.date > b.date ? 1 : -1);
+        const vaccine = injSnap.filter(r => (r.category || "antibiotic") === "vaccine").sort((a, b) => a.date > b.date ? 1 : -1);
+        const renderList = (list) => list.length === 0 ? <div className="empty"><div className="ico">💉</div><p>لا توجد سجلات</p></div> : (
+          <table className="tbl"><thead><tr><th>التاريخ</th><th>النوع</th><th>الأدوية</th><th>ملاحظات</th></tr></thead>
+            <tbody>{list.map((r, i) => (<tr key={i}><td>{r.date}</td><td>{r.type}</td><td>{getMeds(r).map(m => `${m.name}${m.qty ? " (" + m.qty + ")" : ""}`).join("، ")}</td><td>{r.notes || "-"}</td></tr>))}</tbody>
+          </table>
+        );
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>{backBtn}<div className="pg-title" style={{ margin: 0 }}>💉 حقن وتقطير — دورة {g.startDate}</div></div>
+            <div className="card"><div className="card-t">💊 حقن مضاد حيوي</div><div style={{ overflowX: "auto" }}>{renderList(antibiotic)}</div></div>
+            <div className="card"><div className="card-t">💉 تحصينات</div><div style={{ overflowX: "auto" }}>{renderList(vaccine)}</div></div>
+          </div>
+        );
+      }
+      if (groupView === "report") {
+        const barnStats = g.items.map(s => {
+          const tm = (s.dailyRecords || []).reduce((x, r) => x + calcDayStats(r).mortality, 0);
+          const tf = (s.dailyRecords || []).reduce((x, r) => x + calcDayStats(r).feed, 0);
+          const remaining = num(s.birdCount) - tm;
+          const lastW = (s.weeklyWeights || []).slice(-1)[0];
+          return { barn: s.barnName, birdsStart: num(s.birdCount), birds: remaining, mortality: tm, feed: tf, lastWeight: lastW?.avgWeight ? num(lastW.avgWeight) : null };
+        });
+        const totalBirdsStart = barnStats.reduce((s, b) => s + b.birdsStart, 0);
+        const totalBirdsNow = barnStats.reduce((s, b) => s + b.birds, 0);
+        const totalMortAll = barnStats.reduce((s, b) => s + b.mortality, 0);
+        const mortRateAll = totalBirdsStart ? ((totalMortAll / totalBirdsStart) * 100).toFixed(2) : "0.00";
+        const totalFeedConsumed = barnStats.reduce((s, b) => s + b.feed, 0);
+        const totalFeedIn = feedSnap.received.reduce((s, r) => s + num(r.qty), 0);
+        const totalGasIn = gasSnap.reduce((s, r) => s + num(r.qty), 0);
+        let totalMeatKg = 0, birdsWithWeight = 0;
+        barnStats.forEach(b => { if (b.lastWeight) { totalMeatKg += (b.lastWeight / 1000) * b.birds; birdsWithWeight += b.birds; } });
+        const siteAvgWeight = birdsWithWeight ? (totalMeatKg * 1000 / birdsWithWeight).toFixed(0) : "-";
+        const siteFCR = totalMeatKg > 0 ? (totalFeedConsumed / totalMeatKg).toFixed(2) : "-";
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>{backBtn}<div className="pg-title" style={{ margin: 0 }}>📊 تقارير الموقع — دورة {g.startDate}</div></div>
+            <div className="stats" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+              <div className="stat"><div className="sv cy">{totalBirdsStart.toLocaleString()}</div><div className="sl">🐣 عدد الطيور في البداية</div></div>
+              <div className="stat"><div className="sv cg">{totalBirdsNow.toLocaleString()}</div><div className="sl">🐔 عدد الطيور عند الأرشفة</div></div>
+              <div className="stat"><div className="sv cr">{totalMortAll.toLocaleString()}</div><div className="sl">💀 إجمالي النافق</div></div>
+              <div className="stat"><div className="sv cr">{mortRateAll}%</div><div className="sl">📉 نسبة النافق</div></div>
+              <div className="stat"><div className="sv" style={{ color: C.purple }}>{siteFCR}</div><div className="sl">⚖️ معامل التحويل ككل</div></div>
+              <div className="stat"><div className="sv" style={{ color: C.purple }}>{siteAvgWeight}{siteAvgWeight !== "-" ? " جم" : ""}</div><div className="sl">⚖️ متوسط الوزن ككل</div></div>
+              <div className="stat"><div className="sv cy">{totalFeedIn.toFixed(0)} كجم</div><div className="sl">🌾 إجمالي العلف الواصل</div></div>
+              <div className="stat"><div className="sv" style={{ color: C.accent }}>{totalFeedConsumed.toFixed(0)} كجم</div><div className="sl">🌾 إجمالي العلف المستهلك</div></div>
+              <div className="stat"><div className="sv" style={{ color: C.orange }}>{totalGasIn.toFixed(0)} لتر</div><div className="sl">🔥 إجمالي الجاز الواصل</div></div>
+            </div>
+          </div>
+        );
+      }
+    }
+
     return (
       <div>
         {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-          <button className="btn btn-n btn-sm" onClick={() => setSelectedGroup(null)}>← رجوع</button>
+          <button className="btn btn-n btn-sm" onClick={() => { setSelectedGroup(null); setGroupView(null); }}>← رجوع</button>
           <div className="pg-title" style={{ margin: 0 }}>📦 دورة {site.name}</div>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>📅 تاريخ البداية: <strong>{g.startDate}</strong></div>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>📅 تاريخ النهاية: <strong>{g.endDate || "-"}</strong></div>
         </div>
+
+        <div className="pg-sub">مخازن وتقارير الدورة</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          <button onClick={() => setGroupView("feed")} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.accent}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.accent }}>🌾 مخزن العلف</button>
+          <button onClick={() => setGroupView("med")} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.purple}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.purple }}>💊 مخزن الدواء</button>
+          <button onClick={() => setGroupView("gas")} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.orange}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.orange }}>🔥 خزان الجاز</button>
+          <button onClick={() => setGroupView("inj")} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.red}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.red }}>💉 حقن وتقطير</button>
+          <button onClick={() => setGroupView("report")} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.muted}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.text }}>📊 تقارير الموقع</button>
+        </div>
+
         <div className="pg-sub">اختار العنبر لعرض تفاصيله</div>
         {g.items.map(s => {
           const tm = (s.dailyRecords || []).reduce((x, r) => x + calcDayStats(r).mortality, 0);
@@ -2943,7 +3113,9 @@ const emptyMed = () => ({ name: "", qty: "" });
 function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) {
   const canEdit = !!onUpdate;
   const site = SITES.find(s => s.id === siteId);
-  const injections = data?.sites?.[siteId]?.injections || [];
+  const allInjections = data?.sites?.[siteId]?.injections || [];
+  const [cat, setCat] = useState("antibiotic"); // antibiotic = حقن مضاد حيوي | vaccine = تحصينات
+  const injections = allInjections.filter(r => (r.category || "antibiotic") === cat);
   const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], type: "حقن", meds: [emptyMed()], notes: "" });
   const [editRec, setEditRec] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -2964,7 +3136,7 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
     if (!meds.length || !canEdit) return;
     const d = JSON.parse(JSON.stringify(data));
     const inj = d.sites[siteId].injections || [];
-    inj.push({ id: genId(), date: form.date, type: form.type, meds, notes: form.notes });
+    inj.push({ id: genId(), date: form.date, type: form.type, category: cat, meds, notes: form.notes });
     d.sites[siteId].injections = inj;
     onUpdate(d);
     setSaved(true); setTimeout(() => setSaved(false), 2500);
@@ -2982,7 +3154,7 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
   const saveEdit = () => {
     if (!editRec || !canEdit) return;
     const cleanMeds = getMeds(editRec).filter(m => m.name && m.name.trim());
-    const rec = { id: editRec.id, date: editRec.date, type: editRec.type, meds: cleanMeds, notes: editRec.notes || "" };
+    const rec = { id: editRec.id, date: editRec.date, type: editRec.type, category: editRec.category || cat, meds: cleanMeds, notes: editRec.notes || "" };
     const d = JSON.parse(JSON.stringify(data));
     d.sites[siteId].injections = (d.sites[siteId].injections || []).map(r => r.id === rec.id ? rec : r);
     onUpdate(d);
@@ -3025,7 +3197,7 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
 
       {showReport && (
         <SimpleReport
-          title="تقرير حقن وتقطير"
+          title={`تقرير ${cat === "antibiotic" ? "حقن مضاد حيوي" : "تحصينات"}`}
           badge={`الموقع: ${site.name}`}
           currentUser={currentUser}
           onClose={() => setShowReport(false)}
@@ -3050,6 +3222,10 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
         <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>💉 حقن وتقطير {site.name}</div>
         {rows.length > 0 && <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة تقرير</button>}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <button className={`btn btn-sm ${cat === "antibiotic" ? "btn-p" : "btn-n"}`} onClick={() => setCat("antibiotic")}>💊 حقن مضاد حيوي</button>
+        <button className={`btn btn-sm ${cat === "vaccine" ? "btn-p" : "btn-n"}`} onClick={() => setCat("vaccine")}>💉 تحصينات</button>
       </div>
       <div className="pg-sub">سجل مستقل — غير مرتبط بمخزن الدواء</div>
 
@@ -3112,11 +3288,89 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
 }
 
 // ========== SITE PAGE ==========
-function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStore, onOpenMedStore, onOpenGasStore, onOpenInjections, onOpenArchive, currentUser }) {
+// ========== SITE REPORTS PAGE (live stats page, not print) ==========
+function SiteReportsPage({ siteId, data, onBack }) {
+  const site = SITES.find(s => s.id === siteId);
+  const siteData = data?.sites?.[siteId] || { sessions: {}, feedStore: { received: [], dispatched: [] } };
+
+  const barnStats = site.barns.map(barn => {
+    const session = siteData?.sessions?.[barn];
+    if (!session) return { barn, hasSession: false };
+    const totalMort = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).mortality, 0);
+    const totalFeed = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).feed, 0);
+    const remaining = num(session.birdCount) - totalMort;
+    const lastW = (session.weeklyWeights || []).slice(-1)[0];
+    return { barn, hasSession: true, birds: remaining, birdsStart: num(session.birdCount), feed: totalFeed, mortality: totalMort, lastWeight: lastW?.avgWeight ? num(lastW.avgWeight) : null };
+  });
+
+  const totalBirdsStart = barnStats.reduce((s, b) => s + (b.birdsStart || 0), 0);
+  const totalBirdsNow = barnStats.reduce((s, b) => s + (b.birds || 0), 0);
+  const totalMortAll = barnStats.reduce((s, b) => s + (b.mortality || 0), 0);
+  const mortRateAll = totalBirdsStart ? ((totalMortAll / totalBirdsStart) * 100).toFixed(2) : "0.00";
+  const totalFeedConsumed = barnStats.reduce((s, b) => s + (b.feed || 0), 0);
+  const totalFeedIn = (siteData.feedStore?.received || []).reduce((s, r) => s + num(r.qty), 0);
+  const totalGasIn = (siteData.gasStore?.received || []).reduce((s, r) => s + num(r.qty), 0);
+
+  let totalMeatKg = 0, birdsWithWeight = 0;
+  barnStats.forEach(b => {
+    if (b.hasSession && b.lastWeight) {
+      totalMeatKg += (b.lastWeight / 1000) * b.birds;
+      birdsWithWeight += b.birds;
+    }
+  });
+  const siteAvgWeight = birdsWithWeight ? (totalMeatKg * 1000 / birdsWithWeight).toFixed(0) : "-";
+  const siteFCR = totalMeatKg > 0 ? (totalFeedConsumed / totalMeatKg).toFixed(2) : "-";
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <div className="pg-title" style={{ margin: 0 }}>📊 تقارير {site.name}</div>
+      </div>
+      <div className="stats" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+        <div className="stat"><div className="sv cy">{totalBirdsStart.toLocaleString()}</div><div className="sl">🐣 عدد الطيور في البداية</div></div>
+        <div className="stat"><div className="sv cg">{totalBirdsNow.toLocaleString()}</div><div className="sl">🐔 عدد الطيور الحالية</div></div>
+        <div className="stat"><div className="sv cr">{totalMortAll.toLocaleString()}</div><div className="sl">💀 إجمالي النافق</div></div>
+        <div className="stat"><div className="sv cr">{mortRateAll}%</div><div className="sl">📉 نسبة النافق</div></div>
+        <div className="stat"><div className="sv" style={{ color: C.purple }}>{siteFCR}</div><div className="sl">⚖️ معامل التحويل للموقع ككل</div></div>
+        <div className="stat"><div className="sv" style={{ color: C.purple }}>{siteAvgWeight}{siteAvgWeight !== "-" ? " جم" : ""}</div><div className="sl">⚖️ متوسط وزن الموقع ككل</div></div>
+        <div className="stat"><div className="sv cy">{totalFeedIn.toFixed(0)} كجم</div><div className="sl">🌾 إجمالي العلف الواصل</div></div>
+        <div className="stat"><div className="sv" style={{ color: C.accent }}>{totalFeedConsumed.toFixed(0)} كجم</div><div className="sl">🌾 إجمالي العلف المستهلك</div></div>
+        <div className="stat"><div className="sv" style={{ color: C.orange }}>{totalGasIn.toFixed(0)} لتر</div><div className="sl">🔥 إجمالي الجاز الواصل</div></div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-t">🐔 تفاصيل العنابر</div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl">
+            <thead><tr><th>العنبر</th><th>الحالة</th><th>طيور البداية</th><th>الحالية</th><th>النافق</th><th>نسبة النافق</th><th>العلف المستهلك</th><th>آخر وزن</th></tr></thead>
+            <tbody>
+              {barnStats.map((b, i) => (
+                <tr key={i}>
+                  <td><strong>{b.barn}</strong></td>
+                  <td>{b.hasSession ? <span className="badge bg">نشط</span> : <span className="badge">فارغ</span>}</td>
+                  <td>{b.hasSession ? b.birdsStart.toLocaleString() : "-"}</td>
+                  <td>{b.hasSession ? b.birds.toLocaleString() : "-"}</td>
+                  <td>{b.hasSession ? b.mortality : "-"}</td>
+                  <td>{b.hasSession && b.birdsStart ? `${((b.mortality / b.birdsStart) * 100).toFixed(2)}%` : "-"}</td>
+                  <td>{b.hasSession ? `${b.feed.toFixed(0)} كجم` : "-"}</td>
+                  <td>{b.lastWeight ? `${b.lastWeight} جم` : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onBack, onOpenStore, onOpenMedStore, onOpenGasStore, onOpenInjections, onOpenArchive, currentUser }) {
   const site = SITES.find(s => s.id === siteId);
   const siteData = data?.sites?.[siteId] || { sessions: {} };
   const [confirm, setConfirm] = useState(null);
   const [showReport, setShowReport] = useState(false);
+  const [showReportsPage, setShowReportsPage] = useState(false);
 
   const activeBarns = site.barns.filter(b => siteData?.sessions?.[b]);
   const totalBirdsNow = activeBarns.reduce((sum, b) => {
@@ -3125,37 +3379,38 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStor
     return sum + (num(ses.birdCount) - tm);
   }, 0);
   const totalBirdsStart = activeBarns.reduce((sum, b) => sum + num(siteData.sessions[b].birdCount), 0);
+  const siteAlerts = getFarmAlerts(data).filter(a => a.siteName === site.name);
+
+  if (showReportsPage) return <SiteReportsPage siteId={siteId} data={data} onBack={() => setShowReportsPage(false)} />;
 
   return (
     <div>
       {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
       {showReport && <SiteReport siteId={siteId} data={data} currentUser={currentUser} onClose={() => setShowReport(false)} />}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
-          <div className="pg-title" style={{ margin: 0 }}>🏭 {site.name}</div>
-        </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <button className="btn btn-n btn-sm" onClick={() => setShowReport(true)}>🖨️ تقرير الموقع</button>
-          {onDeleteSite && <button className="btn btn-d btn-sm" onClick={() => setConfirm({ msg: `هتمسح كل دورات "${site.name}" ومخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير نهائي!`, fn: () => onDeleteSite(siteId) })}>🗑️ حذف الكل</button>}
-        </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <div className="pg-title" style={{ margin: 0 }}>🏭 {site.name}</div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button onClick={() => onOpenStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.accent}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.accent }}>🌾 مخزن العلف</button>
-        <button onClick={() => onOpenMedStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.purple}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.purple }}>💊 مخزن الدواء</button>
-        <button onClick={() => onOpenGasStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.orange}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.orange }}>🔥 خزان الجاز</button>
-        <button onClick={() => onOpenInjections(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.red}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.red }}>💉 حقن وتقطير</button>
-        <button onClick={() => onOpenArchive(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.muted}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.text }}>📦 الأرشيف</button>
-      </div>
+      {siteAlerts.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          {siteAlerts.map((a, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 8, padding: "8px 12px", marginBottom: 6, fontSize: 12 }}>
+              <span style={{ fontSize: 16 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
+              <span><strong>{a.barn}:</strong> {a.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-      <div className="stats" style={{ marginBottom: 14, gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))" }}>
+      <div className="stats" style={{ marginBottom: 16, gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))" }}>
         <div className="stat" style={{ padding: 8 }}><div className="sv cg" style={{ fontSize: 15 }}>{totalBirdsNow.toLocaleString()}</div><div className="sl" style={{ fontSize: 10 }}>🐔 إجمالي طيور الموقع الحالي</div></div>
         <div className="stat" style={{ padding: 8 }}><div className="sv cy" style={{ fontSize: 15 }}>{totalBirdsStart.toLocaleString()}</div><div className="sl" style={{ fontSize: 10 }}>إجمالي الطيور عند بدء الدورات</div></div>
       </div>
 
       <div className="pg-sub">اختر العنبر</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
         {site.barns.map(barn => {
           const session = siteData?.sessions?.[barn];
           const hasSession = !!session;
@@ -3180,6 +3435,27 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onBack, onOpenStor
           );
         })}
       </div>
+
+      <div className="pg-sub">المخازن والتقارير</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        <button onClick={() => onOpenStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.accent}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.accent }}>🌾 مخزن العلف</button>
+        <button onClick={() => onOpenMedStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.purple}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.purple }}>💊 مخزن الدواء</button>
+        <button onClick={() => onOpenGasStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.orange}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.orange }}>🔥 خزان الجاز</button>
+        <button onClick={() => onOpenInjections(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.red}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.red }}>💉 حقن وتقطير</button>
+        <button onClick={() => setShowReportsPage(true)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.blue}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.blue }}>📊 تقارير الموقع</button>
+        <button onClick={() => onOpenArchive(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.muted}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.text }}>📦 الأرشيف</button>
+      </div>
+
+      {(onArchiveSite || onDeleteSite) && (
+        <>
+          <div className="pg-sub">إدارة الموقع</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button className="btn btn-n btn-sm" onClick={() => setShowReport(true)}>🖨️ طباعة تقرير سريع</button>
+            {onArchiveSite && activeBarns.length > 0 && <button className="btn btn-w btn-sm" onClick={() => setConfirm({ msg: `هيتم أرشفة كل العنابر النشطة في "${site.name}" (${activeBarns.length} عنبر) دفعة واحدة، مع أرشفة مخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير وتقرير الموقع خلال فترة كل دورة. الدورات هتتقفل ومتقدرش تسجل عليها تاني. متابعة؟`, fn: () => onArchiveSite(siteId) })}>📦 أرشفة الموقع بالكامل</button>}
+            {onDeleteSite && <button className="btn btn-d btn-sm" onClick={() => setConfirm({ msg: `هتمسح كل دورات "${site.name}" ومخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير نهائي!`, fn: () => onDeleteSite(siteId) })}>🗑️ حذف الكل</button>}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -3200,10 +3476,21 @@ const siteTheme = (siteId) => {
 };
 
 function HomePage({ data, onSelectSite, onSelectBarn, allowedSites }) {
+  const alerts = getFarmAlerts(data);
   return (
     <div>
       <div className="pg-title">🏠 لوحة التحكم</div>
       <div className="pg-sub">اختر موقعاً للبدء</div>
+      {alerts.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          {alerts.map((a, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 8, padding: "8px 12px", marginBottom: 6, fontSize: 12 }}>
+              <span style={{ fontSize: 16 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
+              <span><strong>{a.siteName} — {a.barn}:</strong> {a.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="home-grid">
         {allowedSites.map(site => {
           const sd = data?.sites?.[site.id];
@@ -3412,6 +3699,53 @@ export default function App() {
   const openInjections = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(true); setShowSettings(false); setShowAiChat(false); };
   const openArchive = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(true); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); };
 
+  const archiveSite = (siteId) => {
+    const d = JSON.parse(JSON.stringify(data));
+    const site = SITES.find(s => s.id === siteId);
+    d.sites[siteId].archive = d.sites[siteId].archive || [];
+    const fs = d.sites[siteId].feedStore || { received: [], dispatched: [], returned: [] };
+    const gs = d.sites[siteId].gasStore || { received: [] };
+    const ms = d.sites[siteId].medStore || { received: [], returned: [] };
+    const inj = d.sites[siteId].injections || [];
+    const endD = new Date();
+    const endDateStr = endD.toISOString().split("T")[0];
+
+    // بالترتيب: عنبر 1 ثم عنبر 2... إلخ
+    site.barns.forEach(barn => {
+      const session = d.sites[siteId].sessions[barn];
+      if (!session) return;
+      const startD = session.startDate ? new Date(session.startDate) : null;
+      const inPeriod = (dateStr) => !!dateStr && (!startD || (new Date(dateStr) >= startD && new Date(dateStr) <= endD));
+      const feedDispatchedForBarn = (fs.dispatched || []).filter(r => r.barn === barn);
+      const feedStoreSnapshot = {
+        received: (fs.received || []).filter(r => inPeriod(r.date)),
+        dispatched: (fs.dispatched || []).filter(r => inPeriod(r.date)),
+        returned: (fs.returned || []).filter(r => inPeriod(r.date)),
+      };
+      const medStoreSnapshot = {
+        received: (ms.received || []).filter(r => inPeriod(r.date)),
+        returned: (ms.returned || []).filter(r => inPeriod(r.date)),
+      };
+      const gasSnapshot = (gs.received || []).filter(r => inPeriod(r.date));
+      const injectionsSnapshot = inj.filter(r => inPeriod(r.date));
+      const medSnapshot = (session.dailyRecords || []).flatMap(r => (r.medicines || []).map(m => ({ ...m, date: r.date })));
+
+      d.sites[siteId].archive.push({
+        ...session,
+        endDate: endDateStr,
+        archivedAt: new Date().toISOString(),
+        feedSnapshot: feedDispatchedForBarn,
+        feedStoreSnapshot,
+        medStoreSnapshot,
+        gasSnapshot,
+        medSnapshot,
+        injectionsSnapshot,
+      });
+      d.sites[siteId].sessions[barn] = null;
+    });
+    updateData(d);
+  };
+
   const deleteSite = (siteId) => {
     const d = JSON.parse(JSON.stringify(data));
     SITES.find(s => s.id === siteId)?.barns.forEach(b => { if (d.sites[siteId]) d.sites[siteId].sessions[b] = null; });
@@ -3434,7 +3768,7 @@ export default function App() {
       if (showGasStore && selectedSite) return <GasStorePage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowGasStore(false)} />;
       if (showInjections && selectedSite) return <InjectionsPage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowInjections(false)} />;
       if (selectedSite && selectedBarn) return <BarnPage siteId={selectedSite} barnName={selectedBarn} data={data} onUpdate={updateData} canEdit={canEdit} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setSelectedBarn(null)} />;
-      if (selectedSite && !selectedBarn) return <SitePage siteId={selectedSite} data={data} onSelectBarn={selectBarn} onDeleteSite={isAdmin ? deleteSite : null} onBack={goHome} onOpenStore={openStore} onOpenMedStore={openMedStore} onOpenGasStore={openGasStore} onOpenInjections={openInjections} onOpenArchive={openArchive} currentUser={currentUser} />;
+      if (selectedSite && !selectedBarn) return <SitePage siteId={selectedSite} data={data} onSelectBarn={selectBarn} onDeleteSite={isAdmin ? deleteSite : null} onArchiveSite={isAdmin ? archiveSite : null} onBack={goHome} onOpenStore={openStore} onOpenMedStore={openMedStore} onOpenGasStore={openGasStore} onOpenInjections={openInjections} onOpenArchive={openArchive} currentUser={currentUser} />;
       return <HomePage data={data} onSelectSite={selectSite} onSelectBarn={selectBarn} allowedSites={allowedSites} />;
     } catch (e) {
       return <div className="empty"><div className="ico">⚠️</div><p>حدث خطأ</p><button className="btn btn-p" style={{ marginTop: 12 }} onClick={goHome}>🏠 الرئيسية</button></div>;
