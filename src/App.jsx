@@ -3380,7 +3380,7 @@ function SiteReportsPage({ siteId, data, onBack, currentUser }) {
 // ========== SMALL UI HELPERS ==========
 function SectionDivider({ children }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 14px", color: C.accentD, fontWeight: 800, fontSize: 13 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 10px", color: C.accentD, fontWeight: 800, fontSize: 11 }}>
       <div style={{ flex: 1, height: 1, background: C.border }} />
       <span>◇ {children} ◇</span>
       <div style={{ flex: 1, height: 1, background: C.border }} />
@@ -3390,9 +3390,9 @@ function SectionDivider({ children }) {
 
 function StoreIconCard({ icon, label, color, onClick }) {
   return (
-    <div onClick={onClick} style={{ background: `rgba(${hexToRgb(color)},.10)`, border: `1px solid rgba(${hexToRgb(color)},.35)`, borderRadius: 16, padding: "20px 10px", textAlign: "center", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, transition: "transform .15s" }}>
-      <div style={{ fontSize: 30 }}>{icon}</div>
-      <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>{label}</div>
+    <div onClick={onClick} style={{ background: `rgba(${hexToRgb(color)},.10)`, border: `1px solid rgba(${hexToRgb(color)},.35)`, borderRadius: 12, padding: "13px 8px", textAlign: "center", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, transition: "transform .15s" }}>
+      <div style={{ fontSize: 20 }}>{icon}</div>
+      <div style={{ fontWeight: 800, fontSize: 11, color: C.text }}>{label}</div>
     </div>
   );
 }
@@ -3420,16 +3420,16 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
       {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
       {showReport && <SiteReport siteId={siteId} data={data} currentUser={currentUser} onClose={() => setShowReport(false)} />}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 16px", marginBottom: 18 }}>
-        <button className="btn btn-n btn-sm" style={{ background: C.green, color: "#fff", border: "none" }} onClick={onBack}>← رجوع</button>
-        <div style={{ fontSize: 18, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>{site.name} 🏚️</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "9px 12px", marginBottom: 14 }}>
+        <button className="btn btn-n btn-xs" style={{ background: C.green, color: "#fff", border: "none" }} onClick={onBack}>← رجوع</button>
+        <div style={{ fontSize: 14, fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>{site.name} 🏚️</div>
       </div>
 
       {siteAlerts.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 12 }}>
           {siteAlerts.map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 8, padding: "8px 12px", marginBottom: 6, fontSize: 12 }}>
-              <span style={{ fontSize: 16 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 7, padding: "6px 10px", marginBottom: 5, fontSize: 10 }}>
+              <span style={{ fontSize: 13 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
               <span><strong>{a.barn}:</strong> {a.message}</span>
             </div>
           ))}
@@ -3439,16 +3439,16 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
       {(onArchiveSite || onDeleteSite) && (
         <>
           <SectionDivider>إدارة الموقع</SectionDivider>
-          <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
-            <button onClick={() => setShowReport(true)} style={{ flex: "1 1 160px", background: C.accent, color: "#fff", border: "none", borderRadius: 12, padding: "14px 10px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>🖨️ طباعة تقرير سريع</button>
-            {onArchiveSite && activeBarns.length > 0 && <button onClick={() => setConfirm({ msg: `هيتم أرشفة كل العنابر النشطة في "${site.name}" (${activeBarns.length} عنبر) دفعة واحدة، مع أرشفة مخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير وتقرير الموقع خلال فترة كل دورة. الدورات هتتقفل ومتقدرش تسجل عليها تاني. متابعة؟`, fn: () => onArchiveSite(siteId) })} style={{ flex: "1 1 160px", background: C.purple, color: "#fff", border: "none", borderRadius: 12, padding: "14px 10px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>📦 أرشفة الموقع بالكامل</button>}
-            {onDeleteSite && <button onClick={() => setConfirm({ msg: `هتمسح كل دورات "${site.name}" ومخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير نهائي!`, fn: () => onDeleteSite(siteId) })} style={{ flex: "1 1 160px", background: "rgba(156,51,39,.12)", color: C.red, border: `1px solid ${C.red}`, borderRadius: 12, padding: "14px 10px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>🗑️ حذف الكل</button>}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            <button onClick={() => setShowReport(true)} style={{ flex: "1 1 130px", background: C.accent, color: "#fff", border: "none", borderRadius: 9, padding: "9px 8px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>🖨️ طباعة تقرير سريع</button>
+            {onArchiveSite && activeBarns.length > 0 && <button onClick={() => setConfirm({ msg: `هيتم أرشفة كل العنابر النشطة في "${site.name}" (${activeBarns.length} عنبر) دفعة واحدة، مع أرشفة مخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير وتقرير الموقع خلال فترة كل دورة. الدورات هتتقفل ومتقدرش تسجل عليها تاني. متابعة؟`, fn: () => onArchiveSite(siteId) })} style={{ flex: "1 1 130px", background: C.purple, color: "#fff", border: "none", borderRadius: 9, padding: "9px 8px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>📦 أرشفة الموقع بالكامل</button>}
+            {onDeleteSite && <button onClick={() => setConfirm({ msg: `هتمسح كل دورات "${site.name}" ومخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير نهائي!`, fn: () => onDeleteSite(siteId) })} style={{ flex: "1 1 130px", background: "rgba(156,51,39,.12)", color: C.red, border: `1px solid ${C.red}`, borderRadius: 9, padding: "9px 8px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>🗑️ حذف الكل</button>}
           </div>
         </>
       )}
 
       <SectionDivider>المخازن والتقارير</SectionDivider>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, marginBottom: 14 }}>
         <StoreIconCard icon="🌾" label="مخزن العلف" color={C.green} onClick={() => onOpenStore(siteId)} />
         <StoreIconCard icon="💊" label="مخزن الدواء" color={C.red} onClick={() => onOpenMedStore(siteId)} />
         <StoreIconCard icon="🔥" label="خزان الجاز" color={C.orange} onClick={() => onOpenGasStore(siteId)} />
@@ -3457,21 +3457,21 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
         <StoreIconCard icon="📊" label="تقارير الموقع" color={C.accent} onClick={() => setShowReportsPage(true)} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, marginBottom: 20 }}>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 12px", textAlign: "center" }}>
-          <div style={{ fontSize: 26 }}>🌾</div>
-          <div style={{ fontSize: 12, color: C.muted, margin: "6px 0" }}>إجمالي الطيور عند بدء الدورات</div>
-          <div style={{ fontSize: 26, fontWeight: 900, color: C.accentD }}>{totalBirdsStart.toLocaleString()}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginBottom: 14 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "12px 8px", textAlign: "center" }}>
+          <div style={{ fontSize: 19 }}>🌾</div>
+          <div style={{ fontSize: 10, color: C.muted, margin: "4px 0" }}>إجمالي الطيور عند بدء الدورات</div>
+          <div style={{ fontSize: 19, fontWeight: 900, color: C.accentD }}>{totalBirdsStart.toLocaleString()}</div>
         </div>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 12px", textAlign: "center" }}>
-          <div style={{ fontSize: 26 }}>🐔</div>
-          <div style={{ fontSize: 12, color: C.muted, margin: "6px 0" }}>إجمالي طيور الموقع الحالي</div>
-          <div style={{ fontSize: 26, fontWeight: 900, color: C.accentD }}>{totalBirdsNow.toLocaleString()}</div>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "12px 8px", textAlign: "center" }}>
+          <div style={{ fontSize: 19 }}>🐔</div>
+          <div style={{ fontSize: 10, color: C.muted, margin: "4px 0" }}>إجمالي طيور الموقع الحالي</div>
+          <div style={{ fontSize: 19, fontWeight: 900, color: C.accentD }}>{totalBirdsNow.toLocaleString()}</div>
         </div>
       </div>
 
       <SectionDivider>اختر العنبر</SectionDivider>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
         {site.barns.map(barn => {
           const session = siteData?.sessions?.[barn];
           const hasSession = !!session;
@@ -3480,17 +3480,17 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
           const remaining = hasSession ? num(session.birdCount) - totalMort : 0;
           return (
             <div key={barn} onClick={() => onSelectBarn(siteId, barn)}
-              style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 18, cursor: "pointer", transition: "all .2s", textAlign: "center", boxShadow: "0 1px 5px rgba(0,0,0,.05)" }}>
-              <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8 }}>{barn}</div>
-              <div style={{ fontSize: 34, marginBottom: 8 }}>🐔</div>
-              <div style={{ display: "inline-block", fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 16, background: hasSession ? `rgba(${hexToRgb(C.green)},.12)` : C.cardAlt, color: hasSession ? C.green : C.muted, marginBottom: 6 }}>{hasSession ? "نشطة ✅" : "فارغ"}</div>
+              style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, cursor: "pointer", transition: "all .2s", textAlign: "center", boxShadow: "0 1px 5px rgba(0,0,0,.05)" }}>
+              <div style={{ fontSize: 12, fontWeight: 900, marginBottom: 5 }}>{barn}</div>
+              <div style={{ fontSize: 24, marginBottom: 5 }}>🐔</div>
+              <div style={{ display: "inline-block", fontSize: 9, fontWeight: 700, padding: "2px 9px", borderRadius: 14, background: hasSession ? `rgba(${hexToRgb(C.green)},.12)` : C.cardAlt, color: hasSession ? C.green : C.muted, marginBottom: 4 }}>{hasSession ? "نشطة ✅" : "فارغ"}</div>
               {hasSession ? (
-                <div style={{ fontSize: 11, color: C.muted, textAlign: "right" }}>
+                <div style={{ fontSize: 9, color: C.muted, textAlign: "right" }}>
                   <div>📅 بداية: <strong style={{ color: C.text }}>{session.startDate}</strong></div>
                   <div>📆 العمر: <strong style={{ color: C.accent }}>{age} يوم</strong></div>
                   <div>🐔 الطيور: <strong style={{ color: C.text }}>{remaining.toLocaleString()}</strong></div>
                 </div>
-              ) : <div style={{ fontSize: 11, color: C.muted }}>لا توجد دورة نشطة</div>}
+              ) : <div style={{ fontSize: 9, color: C.muted }}>لا توجد دورة نشطة</div>}
             </div>
           );
         })}
@@ -3530,8 +3530,6 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
   let sites = allowedSites.filter(site => !search || site.name.toLowerCase().includes(search.toLowerCase()));
   if (activeOnly) sites = sites.filter(site => site.barns.some(b => data?.sites?.[site.id]?.sessions?.[b]));
   if (sortAlpha) sites = [...sites].sort((a, b) => a.name.localeCompare(b.name, "ar"));
-
-  const allBarnPills = allowedSites.flatMap(site => site.barns.map(barn => ({ site, barn, active: !!data?.sites?.[site.id]?.sessions?.[barn] })));
 
   return (
     <div>
@@ -3620,14 +3618,6 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
           </div>
         );
       })}
-
-      {allBarnPills.length > 0 && (
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "6px 2px 14px" }}>
-          {allBarnPills.map((p, i) => (
-            <span key={i} onClick={() => onSelectBarn(p.site.id, p.barn)} className={`btag ${p.active ? "on" : ""}`} style={{ flexShrink: 0, cursor: "pointer" }}><span className="dot" />{p.barn}</span>
-          ))}
-        </div>
-      )}
 
       <div style={{ display: "flex", justifyContent: "space-around", borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 6 }}>
         <div onClick={onOpenSettings} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", color: C.muted, fontSize: 11 }}>
