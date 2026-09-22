@@ -1444,7 +1444,7 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
 
   const filteredTotals = itemTotalsList.filter(it => !search || it.name.toLowerCase().includes(search.toLowerCase()));
   const allRows = [...receivedList.map(r => ({ ...r, _type: "received" })), ...returnedList.map(r => ({ ...r, _type: "returned" }))];
-  const filteredRows = allRows.filter(r => !search || (r.name || "").toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.date > b.date ? 1 : -1);
+  const filteredRows = allRows.filter(r => !search || (r.name || "").toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.date === b.date ? String(a.invoiceId || "").localeCompare(String(b.invoiceId || "")) : (a.date > b.date ? 1 : -1));
 
   return (
     <div>
@@ -1570,20 +1570,30 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
             <table className="tbl">
               <thead><tr><th>التاريخ</th><th>النوع</th><th>الدواء</th><th>الكمية</th><th>الوحدة</th><th>ملاحظات</th>{canEdit && <th>إجراء</th>}</tr></thead>
               <tbody>
-                {filteredRows.map(r => {
-                  const isSel = selectedRec === r.id;
-                  return (
-                    <tr key={r.id} onClick={() => setSelectedRec(isSel ? null : r.id)} style={{ cursor: "pointer", background: isSel ? `rgba(${hexToRgb(C.accent)},.2)` : undefined, outline: isSel ? `2px solid ${C.accent}` : "none", outlineOffset: -2, transition: "background .15s" }}>
-                      <td>{r.date}</td>
-                      <td>{r._type === "received" ? <span className="badge bg">وارد</span> : <span className="badge br">مرتجع للمكتب</span>}</td>
-                      <td style={{ fontWeight: 700 }}>💊 {r.name}</td>
-                      <td style={{ color: r._type === "received" ? C.green : C.red }}>{r._type === "received" ? "+" : "-"}{r.qty}</td>
-                      <td>{r.unit}</td>
-                      <td>{r.notes || "-"}</td>
-                      {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={e => { e.stopPropagation(); setEditRec({ ...r }); }}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={e => { e.stopPropagation(); deleteEntry(r._type, r.id); }}>🗑️</button>}</div></td>}
-                    </tr>
-                  );
-                })}
+                {(() => {
+                  // نجمع الأصناف اللي جاية من نفس الفاتورة (نفس invoiceId) تحت خانة تاريخ واحدة
+                  const groups = [];
+                  filteredRows.forEach(r => {
+                    const key = `${r.invoiceId || r.id}-${r._type}`;
+                    const last = groups[groups.length - 1];
+                    if (last && last.key === key) last.rows.push(r);
+                    else groups.push({ key, date: r.date, type: r._type, rows: [r] });
+                  });
+                  return groups.flatMap((g, gi) => g.rows.map((r, ri) => {
+                    const isSel = selectedRec === r.id;
+                    return (
+                      <tr key={r.id} onClick={() => setSelectedRec(isSel ? null : r.id)} style={{ cursor: "pointer", background: isSel ? `rgba(${hexToRgb(C.accent)},.2)` : undefined, outline: isSel ? `2px solid ${C.accent}` : "none", outlineOffset: -2, transition: "background .15s" }}>
+                        {ri === 0 && <td rowSpan={g.rows.length}>{g.date}</td>}
+                        {ri === 0 && <td rowSpan={g.rows.length}>{g.type === "received" ? <span className="badge bg">وارد</span> : <span className="badge br">مرتجع للمكتب</span>}</td>}
+                        <td style={{ fontWeight: 700 }}>💊 {r.name}</td>
+                        <td style={{ color: r._type === "received" ? C.green : C.red }}>{r._type === "received" ? "+" : "-"}{r.qty}</td>
+                        <td>{r.unit}</td>
+                        <td>{r.notes || "-"}</td>
+                        {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={e => { e.stopPropagation(); setEditRec({ ...r }); }}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={e => { e.stopPropagation(); deleteEntry(r._type, r.id); }}>🗑️</button>}</div></td>}
+                      </tr>
+                    );
+                  }));
+                })()}
               </tbody>
             </table>
           </div>
@@ -2073,6 +2083,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
   const [groupView, setGroupView] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [showReport, setShowReport] = useState(false);
+  const [showGroupReport, setShowGroupReport] = useState(false);
   const site = SITES.find(s => s.id === siteId);
 
   const allArchived = (data?.sites?.[siteId]?.archive || []).map((s, idx) => ({ ...s, siteName: site.name, siteId, idx }));
@@ -2212,114 +2223,6 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
             </div>
           </div>
         )}
-
-        <div className="card-t" style={{ margin: "16px 2px 6px" }}>📦 أرشيف المخازن خلال فترة الدورة</div>
-
-        {s.feedStoreSnapshot && (s.feedStoreSnapshot.received.length + s.feedStoreSnapshot.dispatched.length + s.feedStoreSnapshot.returned.length > 0) && (
-          <div className="card">
-            <div className="card-t">🌾 مخزن العلف (كل الموقع) — {s.startDate} إلى {endDateDisplay}</div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8, fontSize: 11 }}>
-              <span className="badge bg">إجمالي وارد: +{s.feedStoreSnapshot.received.reduce((x, r) => x + num(r.qty), 0).toFixed(0)} كجم</span>
-              <span className="badge br">إجمالي صادر: -{s.feedStoreSnapshot.dispatched.reduce((x, r) => x + num(r.qty), 0).toFixed(0)} كجم</span>
-              <span className="badge br">مرتجع للمكتب: -{s.feedStoreSnapshot.returned.reduce((x, r) => x + num(r.qty), 0).toFixed(0)} كجم</span>
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>النوع</th><th>العنبر</th><th>الصنف</th><th>الكمية</th></tr></thead>
-                <tbody>
-                  {[
-                    ...s.feedStoreSnapshot.received.map(r => ({ ...r, _type: "received" })),
-                    ...s.feedStoreSnapshot.dispatched.map(r => ({ ...r, _type: "dispatched" })),
-                    ...s.feedStoreSnapshot.returned.map(r => ({ ...r, _type: "returned" })),
-                  ].sort((a, b) => a.date > b.date ? 1 : -1).map((r, i) => (
-                    <tr key={i}>
-                      <td>{r.date}</td>
-                      <td>{r._type === "received" ? <span className="badge bg">وارد</span> : r._type === "dispatched" ? <span className="badge br">صرف</span> : <span className="badge br">مرتجع</span>}</td>
-                      <td>{r.barn || "-"}</td>
-                      <td>{r.item || "-"}</td>
-                      <td style={{ color: r._type === "received" ? C.green : C.red }}>{r._type === "received" ? "+" : "-"}{r.qty} كجم</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {s.medStoreSnapshot && (s.medStoreSnapshot.received.length + s.medStoreSnapshot.returned.length > 0) && (
-          <div className="card">
-            <div className="card-t">💊 مخزن الدواء (كل الموقع) — {s.startDate} إلى {endDateDisplay}</div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>النوع</th><th>الدواء</th><th>الكمية</th><th>ملاحظات</th></tr></thead>
-                <tbody>
-                  {[
-                    ...s.medStoreSnapshot.received.map(r => ({ ...r, _type: "received" })),
-                    ...s.medStoreSnapshot.returned.map(r => ({ ...r, _type: "returned" })),
-                  ].sort((a, b) => a.date > b.date ? 1 : -1).map((r, i) => (
-                    <tr key={i}>
-                      <td>{r.date}</td>
-                      <td>{r._type === "received" ? <span className="badge bg">وارد</span> : <span className="badge br">مرتجع</span>}</td>
-                      <td>💊 {r.name}</td>
-                      <td style={{ color: r._type === "received" ? C.green : C.red }}>{r._type === "received" ? "+" : "-"}{r.qty} {r.unit || ""}</td>
-                      <td>{r.notes || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {(s.medSnapshot || []).length > 0 && (
-          <div className="card">
-            <div className="card-t">💊 الأدوية المستخدمة فعلياً في هذا العنبر</div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>العمر</th><th>الدواء</th><th>عدد الساعات</th></tr></thead>
-                <tbody>
-                  {(s.medSnapshot || []).map((m, i) => {
-                    const dayAge = s.startDate ? Math.floor((new Date(m.date) - new Date(s.startDate)) / 86400000) : "-";
-                    return (<tr key={i}><td>{m.date}</td><td><span className="badge by">{dayAge} يوم</span></td><td>💊 {m.name}</td><td>{m.hours ? `${m.hours} ساعة` : "-"}</td></tr>);
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {(s.injectionsSnapshot || []).length > 0 && (
-          <div className="card">
-            <div className="card-t">💉 سجل الحقن (كل الموقع) خلال فترة الدورة</div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>النوع</th><th>الأدوية</th><th>ملاحظات</th></tr></thead>
-                <tbody>
-                  {(s.injectionsSnapshot || []).map((r, i) => (
-                    <tr key={i}><td>{r.date}</td><td>{r.type || "-"}</td><td>{(r.meds || []).map(m => m.name).filter(Boolean).join("، ") || "-"}</td><td>{r.notes || "-"}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {(s.gasSnapshot || []).length > 0 && (
-          <div className="card">
-            <div className="card-t">🔥 خزان الجاز (كل الموقع) خلال فترة الدورة</div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>العمر</th><th>الكمية</th><th>ملاحظات</th></tr></thead>
-                <tbody>
-                  {(s.gasSnapshot || []).map((r, i) => {
-                    const dayAge = s.startDate ? Math.floor((new Date(r.date) - new Date(s.startDate)) / 86400000) : "-";
-                    return (<tr key={i}><td>{r.date}</td><td><span className="badge by">{dayAge} يوم</span></td><td style={{ color: C.green }}>+{r.qty} لتر</td><td>{r.notes || "-"}</td></tr>);
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -2397,7 +2300,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
         const vaccine = injSnap.filter(r => (r.category || "antibiotic") === "vaccine").sort((a, b) => a.date > b.date ? 1 : -1);
         const renderList = (list) => list.length === 0 ? <div className="empty"><div className="ico">💉</div><p>لا توجد سجلات</p></div> : (
           <table className="tbl"><thead><tr><th>التاريخ</th><th>النوع</th><th>الأدوية</th><th>ملاحظات</th></tr></thead>
-            <tbody>{list.map((r, i) => (<tr key={i}><td>{r.date}</td><td>{r.type}</td><td>{getMeds(r).map(m => `${m.name}${m.qty ? " (" + m.qty + ")" : ""}`).join("، ")}</td><td>{r.notes || "-"}</td></tr>))}</tbody>
+            <tbody>{list.map((r, i) => (<tr key={i}><td>{r.date}</td><td>{r.type}</td><td>{getMeds(r).map(m => `${m.name}${m.qty ? " (" + m.qty + ")" : ""}`).join("، ")}</td><td>{getMeds(r).map(m => m.notes).filter(Boolean).join("، ") || "-"}</td></tr>))}</tbody>
           </table>
         );
         return (
@@ -2429,7 +2332,43 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
         const siteFCR = totalMeatKg > 0 ? (totalFeedConsumed / totalMeatKg).toFixed(2) : "-";
         return (
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>{backBtn}<div className="pg-title" style={{ margin: 0 }}>📊 تقارير الموقع — دورة {g.startDate}</div></div>
+            {showGroupReport && (
+              <SimpleReport
+                title={`تقارير الموقع — دورة ${g.startDate}`}
+                badge={`الموقع: ${site.name}`}
+                currentUser={currentUser}
+                onClose={() => setShowGroupReport(false)}
+                sections={
+                  <>
+                    <div className="a4sechead">مؤشرات الدورة</div>
+                    <table className="a4tbl">
+                      <thead><tr><th>المؤشر</th><th>القيمة</th></tr></thead>
+                      <tbody>
+                        <tr><td>عدد الطيور في البداية</td><td>{totalBirdsStart.toLocaleString()}</td></tr>
+                        <tr><td>عدد الطيور عند الأرشفة</td><td>{totalBirdsNow.toLocaleString()}</td></tr>
+                        <tr><td>إجمالي النافق</td><td>{totalMortAll.toLocaleString()}</td></tr>
+                        <tr><td>نسبة النافق</td><td>{mortRateAll}%</td></tr>
+                        <tr><td>معامل التحويل ككل</td><td>{siteFCR}</td></tr>
+                        <tr><td>متوسط الوزن ككل</td><td>{siteAvgWeight}{siteAvgWeight !== "-" ? " جم" : ""}</td></tr>
+                        <tr><td>إجمالي العلف الواصل</td><td>{totalFeedIn.toFixed(0)} كجم</td></tr>
+                        <tr><td>إجمالي العلف المستهلك</td><td>{totalFeedConsumed.toFixed(0)} كجم</td></tr>
+                        <tr><td>إجمالي الجاز الواصل</td><td>{totalGasIn.toFixed(0)} لتر</td></tr>
+                      </tbody>
+                    </table>
+                    <div className="a4sechead">تفاصيل العنابر</div>
+                    <table className="a4tbl">
+                      <thead><tr><th>العنبر</th><th>طيور البداية</th><th>الحالية</th><th>النافق</th><th>العلف</th><th>آخر وزن</th></tr></thead>
+                      <tbody>
+                        {barnStats.map((b, i) => (
+                          <tr key={i}><td>{b.barn}</td><td>{b.birdsStart.toLocaleString()}</td><td>{b.birds.toLocaleString()}</td><td>{b.mortality}</td><td>{b.feed.toFixed(0)} كجم</td><td>{b.lastWeight ? `${b.lastWeight} جم` : "-"}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                }
+              />
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>{backBtn}<div className="pg-title" style={{ margin: 0 }}>📊 تقارير الموقع — دورة {g.startDate}</div><button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowGroupReport(true)}>🖨️ طباعة</button></div>
             <div className="stats" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
               <div className="stat"><div className="sv cy">{totalBirdsStart.toLocaleString()}</div><div className="sl">🐣 عدد الطيور في البداية</div></div>
               <div className="stat"><div className="sv cg">{totalBirdsNow.toLocaleString()}</div><div className="sl">🐔 عدد الطيور عند الأرشفة</div></div>
@@ -3108,20 +3047,26 @@ const getMeds = (r) => {
   if (r.name) return [{ name: r.name, qty: r.qty }];
   return [];
 };
-const emptyMed = () => ({ name: "", qty: "" });
+const emptyMed = () => ({ name: "", qty: "", notes: "" });
 
 function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) {
   const canEdit = !!onUpdate;
   const site = SITES.find(s => s.id === siteId);
   const allInjections = data?.sites?.[siteId]?.injections || [];
   const [cat, setCat] = useState("antibiotic"); // antibiotic = حقن مضاد حيوي | vaccine = تحصينات
+  const VACCINE_TYPES = ["في الماء", "قطرة عين", "رش", "حقن"];
   const injections = allInjections.filter(r => (r.category || "antibiotic") === cat);
-  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], type: "حقن", meds: [emptyMed()], notes: "" });
+  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], type: "حقن", meds: [emptyMed()] });
   const [editRec, setEditRec] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [saved, setSaved] = useState(false);
   const [search, setSearch] = useState("");
   const [showReport, setShowReport] = useState(false);
+
+  const switchCat = (newCat) => {
+    setCat(newCat);
+    setForm({ date: form.date, type: newCat === "antibiotic" ? "حقن" : VACCINE_TYPES[0], meds: [emptyMed()] });
+  };
 
   const setFormMed = (i, key, val) => setForm(p => ({ ...p, meds: p.meds.map((m, idx) => idx === i ? { ...m, [key]: val } : m) }));
   const addFormMedRow = () => setForm(p => ({ ...p, meds: [...p.meds, emptyMed()] }));
@@ -3136,11 +3081,11 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
     if (!meds.length || !canEdit) return;
     const d = JSON.parse(JSON.stringify(data));
     const inj = d.sites[siteId].injections || [];
-    inj.push({ id: genId(), date: form.date, type: form.type, category: cat, meds, notes: form.notes });
+    inj.push({ id: genId(), date: form.date, type: cat === "antibiotic" ? "حقن" : form.type, category: cat, meds });
     d.sites[siteId].injections = inj;
     onUpdate(d);
     setSaved(true); setTimeout(() => setSaved(false), 2500);
-    setForm({ date: form.date, type: form.type, meds: [emptyMed()], notes: "" });
+    setForm({ date: form.date, type: form.type, meds: [emptyMed()] });
   };
 
   const deleteRec = (id) => {
@@ -3154,7 +3099,7 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
   const saveEdit = () => {
     if (!editRec || !canEdit) return;
     const cleanMeds = getMeds(editRec).filter(m => m.name && m.name.trim());
-    const rec = { id: editRec.id, date: editRec.date, type: editRec.type, category: editRec.category || cat, meds: cleanMeds, notes: editRec.notes || "" };
+    const rec = { id: editRec.id, date: editRec.date, type: editRec.category === "antibiotic" ? "حقن" : editRec.type, category: editRec.category || cat, meds: cleanMeds };
     const d = JSON.parse(JSON.stringify(data));
     d.sites[siteId].injections = (d.sites[siteId].injections || []).map(r => r.id === rec.id ? rec : r);
     onUpdate(d);
@@ -3176,20 +3121,29 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
             <div className="modal-t">✏️ تعديل سجل {editRec.type}</div>
             <div className="g2" style={{ marginBottom: 12 }}>
               <div className="fg"><label className="lbl">التاريخ</label><input className="inp" type="date" value={editRec.date} onChange={e => setEditRec(p => ({ ...p, date: e.target.value }))} /></div>
-              <div className="fg"><label className="lbl">النوع</label><select className="inp" value={editRec.type} onChange={e => setEditRec(p => ({ ...p, type: e.target.value }))}><option value="حقن">حقن</option><option value="تقطير">تقطير</option></select></div>
+              <div className="fg">
+                <label className="lbl">النوع</label>
+                {(editRec.category || cat) === "antibiotic" ? (
+                  <input className="inp" value="حقن" disabled style={{ opacity: .7 }} />
+                ) : (
+                  <select className="inp" value={editRec.type} onChange={e => setEditRec(p => ({ ...p, type: e.target.value }))}>
+                    {VACCINE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
+              </div>
             </div>
             <div className="fg" style={{ marginBottom: 8 }}>
               <label className="lbl">الأدوية</label>
               {getMeds(editRec).map((m, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
-                  <input className="inp" style={{ flex: 2 }} placeholder="اسم الدواء" value={m.name} onChange={e => setEditMed(i, "name", e.target.value)} />
-                  <input className="inp" style={{ flex: 1 }} type="number" placeholder="الكمية" value={m.qty} onChange={e => setEditMed(i, "qty", e.target.value)} />
+                <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <input className="inp" style={{ flex: "2 1 140px" }} placeholder="اسم الدواء" value={m.name} onChange={e => setEditMed(i, "name", e.target.value)} />
+                  <input className="inp" style={{ flex: "1 1 80px" }} type="number" placeholder="الكمية" value={m.qty} onChange={e => setEditMed(i, "qty", e.target.value)} />
+                  <input className="inp" style={{ flex: "2 1 140px" }} placeholder="ملاحظة على الصنف (اختياري)" value={m.notes || ""} onChange={e => setEditMed(i, "notes", e.target.value)} />
                   {getMeds(editRec).length > 1 && <button className="btn btn-d btn-xs" onClick={() => removeEditMedRow(i)}>🗑️</button>}
                 </div>
               ))}
               <button className="btn btn-n btn-sm" onClick={addEditMedRow}>+ إضافة دواء</button>
             </div>
-            <div className="fg" style={{ marginBottom: 12 }}><label className="lbl">ملاحظات</label><input className="inp" value={editRec.notes || ""} onChange={e => setEditRec(p => ({ ...p, notes: e.target.value }))} /></div>
             <div style={{ display: "flex", gap: 8 }}><button className="btn btn-n" style={{ flex: 1 }} onClick={() => setEditRec(null)}>إلغاء</button><button className="btn btn-p" style={{ flex: 1 }} onClick={saveEdit}>💾 حفظ</button></div>
           </div>
         </div>
@@ -3211,7 +3165,7 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
               <div className="a4sechead">سجل الحقن والتقطير</div>
               <table className="a4tbl">
                 <thead><tr><th>التاريخ</th><th>النوع</th><th>الأدوية والكميات</th><th>ملاحظات</th></tr></thead>
-                <tbody>{rows.map((r, i) => (<tr key={i}><td>{r.date}</td><td>{r.type}</td><td>{getMeds(r).map(m => `${m.name}${m.qty ? " (" + m.qty + ")" : ""}`).join("، ")}</td><td>{r.notes || "-"}</td></tr>))}</tbody>
+                <tbody>{rows.map((r, i) => (<tr key={i}><td>{r.date}</td><td>{r.type}</td><td>{getMeds(r).map(m => `${m.name}${m.qty ? " (" + m.qty + ")" : ""}`).join("، ")}</td><td>{getMeds(r).map(m => m.notes).filter(Boolean).join("، ") || "-"}</td></tr>))}</tbody>
               </table>
             </>
           }
@@ -3224,8 +3178,8 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
         {rows.length > 0 && <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة تقرير</button>}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button className={`btn btn-sm ${cat === "antibiotic" ? "btn-p" : "btn-n"}`} onClick={() => setCat("antibiotic")}>💊 حقن مضاد حيوي</button>
-        <button className={`btn btn-sm ${cat === "vaccine" ? "btn-p" : "btn-n"}`} onClick={() => setCat("vaccine")}>💉 تحصينات</button>
+        <button className={`btn btn-sm ${cat === "antibiotic" ? "btn-p" : "btn-n"}`} onClick={() => switchCat("antibiotic")}>💊 حقن مضاد حيوي</button>
+        <button className={`btn btn-sm ${cat === "vaccine" ? "btn-p" : "btn-n"}`} onClick={() => switchCat("vaccine")}>💉 تحصينات</button>
       </div>
       <div className="pg-sub">سجل مستقل — غير مرتبط بمخزن الدواء</div>
 
@@ -3236,20 +3190,29 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
           <div className="card-t">➕ تسجيل جديد</div>
           <div className="g2" style={{ marginBottom: 10 }}>
             <div className="fg"><label className="lbl">التاريخ</label><input className="inp" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-            <div className="fg"><label className="lbl">النوع</label><select className="inp" value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option value="حقن">حقن</option><option value="تقطير">تقطير</option></select></div>
+            <div className="fg">
+              <label className="lbl">النوع</label>
+              {cat === "antibiotic" ? (
+                <input className="inp" value="حقن" disabled style={{ opacity: .7 }} />
+              ) : (
+                <select className="inp" value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
+                  {VACCINE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              )}
+            </div>
           </div>
           <div className="fg" style={{ marginBottom: 10 }}>
             <label className="lbl">الأدوية (تقدر تضيف أكتر من دواء في نفس العملية)</label>
             {form.meds.map((m, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
-                <input className="inp" style={{ flex: 2 }} placeholder="اسم الدواء" value={m.name} onChange={e => setFormMed(i, "name", e.target.value)} />
-                <input className="inp" style={{ flex: 1 }} type="number" placeholder="الكمية" value={m.qty} onChange={e => setFormMed(i, "qty", e.target.value)} />
+              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <input className="inp" style={{ flex: "2 1 140px" }} placeholder="اسم الدواء" value={m.name} onChange={e => setFormMed(i, "name", e.target.value)} />
+                <input className="inp" style={{ flex: "1 1 80px" }} type="number" placeholder="الكمية" value={m.qty} onChange={e => setFormMed(i, "qty", e.target.value)} />
+                <input className="inp" style={{ flex: "2 1 140px" }} placeholder="ملاحظة على الصنف (اختياري)" value={m.notes || ""} onChange={e => setFormMed(i, "notes", e.target.value)} />
                 {form.meds.length > 1 && <button className="btn btn-d btn-xs" onClick={() => removeFormMedRow(i)}>🗑️</button>}
               </div>
             ))}
             <button className="btn btn-n btn-sm" onClick={addFormMedRow}>+ إضافة دواء</button>
           </div>
-          <div className="fg"><label className="lbl">ملاحظات</label><input className="inp" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
           <button className="btn btn-s btn-sm" style={{ marginTop: 10 }} onClick={addRec}>+ تسجيل</button>
         </div>
       )}
@@ -3263,18 +3226,20 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
-              <thead><tr><th>التاريخ</th><th>النوع</th><th>الأدوية</th><th>ملاحظات</th>{canEdit && <th>إجراء</th>}</tr></thead>
+              <thead><tr><th>التاريخ</th><th>النوع</th><th>الأدوية</th>{canEdit && <th>إجراء</th>}</tr></thead>
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id}>
                     <td>{r.date}</td>
-                    <td><span className="badge" style={{ background: r.type === "حقن" ? `rgba(${hexToRgb(C.red)},.12)` : `rgba(${hexToRgb(C.blue)},.12)`, color: r.type === "حقن" ? C.red : C.blue }}>{r.type}</span></td>
+                    <td><span className="badge" style={{ background: `rgba(${hexToRgb(C.blue)},.12)`, color: C.blue }}>{r.type}</span></td>
                     <td style={{ fontWeight: 700 }}>
                       {getMeds(r).map((m, i) => (
-                        <div key={i}>💊 {m.name}{m.qty ? ` — ${m.qty}` : ""}</div>
+                        <div key={i} style={{ marginBottom: 3 }}>
+                          💊 {m.name}{m.qty ? ` — ${m.qty}` : ""}
+                          {m.notes && <span style={{ fontWeight: 400, color: C.muted, fontSize: 11 }}> ({m.notes})</span>}
+                        </div>
                       ))}
                     </td>
-                    <td>{r.notes || "-"}</td>
                     {canEdit && <td><div style={{ display: "flex", gap: 3 }}><button className="btn btn-n btn-xs" onClick={() => setEditRec({ ...r })}>✏️</button>{isAdmin && <button className="btn btn-d btn-xs" onClick={() => deleteRec(r.id)}>🗑️</button>}</div></td>}
                   </tr>
                 ))}
@@ -3289,9 +3254,10 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
 
 // ========== SITE PAGE ==========
 // ========== SITE REPORTS PAGE (live stats page, not print) ==========
-function SiteReportsPage({ siteId, data, onBack }) {
+function SiteReportsPage({ siteId, data, onBack, currentUser }) {
   const site = SITES.find(s => s.id === siteId);
   const siteData = data?.sites?.[siteId] || { sessions: {}, feedStore: { received: [], dispatched: [] } };
+  const [showReport, setShowReport] = useState(false);
 
   const barnStats = site.barns.map(barn => {
     const session = siteData?.sessions?.[barn];
@@ -3323,9 +3289,55 @@ function SiteReportsPage({ siteId, data, onBack }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+      {showReport && (
+        <SimpleReport
+          title={`تقارير ${site.name}`}
+          badge={`الموقع: ${site.name}`}
+          currentUser={currentUser}
+          onClose={() => setShowReport(false)}
+          sections={
+            <>
+              <div className="a4sechead">مؤشرات الموقع</div>
+              <table className="a4tbl">
+                <thead><tr><th>المؤشر</th><th>القيمة</th></tr></thead>
+                <tbody>
+                  <tr><td>عدد الطيور في البداية</td><td>{totalBirdsStart.toLocaleString()}</td></tr>
+                  <tr><td>عدد الطيور الحالية</td><td>{totalBirdsNow.toLocaleString()}</td></tr>
+                  <tr><td>إجمالي النافق</td><td>{totalMortAll.toLocaleString()}</td></tr>
+                  <tr><td>نسبة النافق</td><td>{mortRateAll}%</td></tr>
+                  <tr><td>معامل التحويل للموقع ككل</td><td>{siteFCR}</td></tr>
+                  <tr><td>متوسط وزن الموقع ككل</td><td>{siteAvgWeight}{siteAvgWeight !== "-" ? " جم" : ""}</td></tr>
+                  <tr><td>إجمالي العلف الواصل</td><td>{totalFeedIn.toFixed(0)} كجم</td></tr>
+                  <tr><td>إجمالي العلف المستهلك</td><td>{totalFeedConsumed.toFixed(0)} كجم</td></tr>
+                  <tr><td>إجمالي الجاز الواصل</td><td>{totalGasIn.toFixed(0)} لتر</td></tr>
+                </tbody>
+              </table>
+              <div className="a4sechead">تفاصيل العنابر</div>
+              <table className="a4tbl">
+                <thead><tr><th>العنبر</th><th>الحالة</th><th>طيور البداية</th><th>الحالية</th><th>النافق</th><th>نسبة النافق</th><th>العلف المستهلك</th><th>آخر وزن</th></tr></thead>
+                <tbody>
+                  {barnStats.map((b, i) => (
+                    <tr key={i}>
+                      <td>{b.barn}</td>
+                      <td>{b.hasSession ? "نشط" : "فارغ"}</td>
+                      <td>{b.hasSession ? b.birdsStart.toLocaleString() : "-"}</td>
+                      <td>{b.hasSession ? b.birds.toLocaleString() : "-"}</td>
+                      <td>{b.hasSession ? b.mortality : "-"}</td>
+                      <td>{b.hasSession && b.birdsStart ? `${((b.mortality / b.birdsStart) * 100).toFixed(2)}%` : "-"}</td>
+                      <td>{b.hasSession ? `${b.feed.toFixed(0)} كجم` : "-"}</td>
+                      <td>{b.lastWeight ? `${b.lastWeight} جم` : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          }
+        />
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
         <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>📊 تقارير {site.name}</div>
+        <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة</button>
       </div>
       <div className="stats" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
         <div className="stat"><div className="sv cy">{totalBirdsStart.toLocaleString()}</div><div className="sl">🐣 عدد الطيور في البداية</div></div>
@@ -3365,6 +3377,26 @@ function SiteReportsPage({ siteId, data, onBack }) {
   );
 }
 
+// ========== SMALL UI HELPERS ==========
+function SectionDivider({ children }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 14px", color: C.accentD, fontWeight: 800, fontSize: 13 }}>
+      <div style={{ flex: 1, height: 1, background: C.border }} />
+      <span>◇ {children} ◇</span>
+      <div style={{ flex: 1, height: 1, background: C.border }} />
+    </div>
+  );
+}
+
+function StoreIconCard({ icon, label, color, onClick }) {
+  return (
+    <div onClick={onClick} style={{ background: `rgba(${hexToRgb(color)},.10)`, border: `1px solid rgba(${hexToRgb(color)},.35)`, borderRadius: 16, padding: "20px 10px", textAlign: "center", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, transition: "transform .15s" }}>
+      <div style={{ fontSize: 30 }}>{icon}</div>
+      <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>{label}</div>
+    </div>
+  );
+}
+
 function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onBack, onOpenStore, onOpenMedStore, onOpenGasStore, onOpenInjections, onOpenArchive, currentUser }) {
   const site = SITES.find(s => s.id === siteId);
   const siteData = data?.sites?.[siteId] || { sessions: {} };
@@ -3381,16 +3413,16 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
   const totalBirdsStart = activeBarns.reduce((sum, b) => sum + num(siteData.sessions[b].birdCount), 0);
   const siteAlerts = getFarmAlerts(data).filter(a => a.siteName === site.name);
 
-  if (showReportsPage) return <SiteReportsPage siteId={siteId} data={data} onBack={() => setShowReportsPage(false)} />;
+  if (showReportsPage) return <SiteReportsPage siteId={siteId} data={data} onBack={() => setShowReportsPage(false)} currentUser={currentUser} />;
 
   return (
     <div>
       {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
       {showReport && <SiteReport siteId={siteId} data={data} currentUser={currentUser} onClose={() => setShowReport(false)} />}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
-        <div className="pg-title" style={{ margin: 0 }}>🏭 {site.name}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 16px", marginBottom: 18 }}>
+        <button className="btn btn-n btn-sm" style={{ background: C.green, color: "#fff", border: "none" }} onClick={onBack}>← رجوع</button>
+        <div style={{ fontSize: 18, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>{site.name} 🏚️</div>
       </div>
 
       {siteAlerts.length > 0 && (
@@ -3404,13 +3436,42 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
         </div>
       )}
 
-      <div className="stats" style={{ marginBottom: 16, gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))" }}>
-        <div className="stat" style={{ padding: 8 }}><div className="sv cg" style={{ fontSize: 15 }}>{totalBirdsNow.toLocaleString()}</div><div className="sl" style={{ fontSize: 10 }}>🐔 إجمالي طيور الموقع الحالي</div></div>
-        <div className="stat" style={{ padding: 8 }}><div className="sv cy" style={{ fontSize: 15 }}>{totalBirdsStart.toLocaleString()}</div><div className="sl" style={{ fontSize: 10 }}>إجمالي الطيور عند بدء الدورات</div></div>
+      {(onArchiveSite || onDeleteSite) && (
+        <>
+          <SectionDivider>إدارة الموقع</SectionDivider>
+          <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+            <button onClick={() => setShowReport(true)} style={{ flex: "1 1 160px", background: C.accent, color: "#fff", border: "none", borderRadius: 12, padding: "14px 10px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>🖨️ طباعة تقرير سريع</button>
+            {onArchiveSite && activeBarns.length > 0 && <button onClick={() => setConfirm({ msg: `هيتم أرشفة كل العنابر النشطة في "${site.name}" (${activeBarns.length} عنبر) دفعة واحدة، مع أرشفة مخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير وتقرير الموقع خلال فترة كل دورة. الدورات هتتقفل ومتقدرش تسجل عليها تاني. متابعة؟`, fn: () => onArchiveSite(siteId) })} style={{ flex: "1 1 160px", background: C.purple, color: "#fff", border: "none", borderRadius: 12, padding: "14px 10px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>📦 أرشفة الموقع بالكامل</button>}
+            {onDeleteSite && <button onClick={() => setConfirm({ msg: `هتمسح كل دورات "${site.name}" ومخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير نهائي!`, fn: () => onDeleteSite(siteId) })} style={{ flex: "1 1 160px", background: "rgba(156,51,39,.12)", color: C.red, border: `1px solid ${C.red}`, borderRadius: 12, padding: "14px 10px", cursor: "pointer", fontFamily: "Cairo", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>🗑️ حذف الكل</button>}
+          </div>
+        </>
+      )}
+
+      <SectionDivider>المخازن والتقارير</SectionDivider>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
+        <StoreIconCard icon="🌾" label="مخزن العلف" color={C.green} onClick={() => onOpenStore(siteId)} />
+        <StoreIconCard icon="💊" label="مخزن الدواء" color={C.red} onClick={() => onOpenMedStore(siteId)} />
+        <StoreIconCard icon="🔥" label="خزان الجاز" color={C.orange} onClick={() => onOpenGasStore(siteId)} />
+        <StoreIconCard icon="💉" label="حقن وتقطير" color={C.blue} onClick={() => onOpenInjections(siteId)} />
+        <StoreIconCard icon="📦" label="الأرشيف" color={C.purple} onClick={() => onOpenArchive(siteId)} />
+        <StoreIconCard icon="📊" label="تقارير الموقع" color={C.accent} onClick={() => setShowReportsPage(true)} />
       </div>
 
-      <div className="pg-sub">اختر العنبر</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, marginBottom: 20 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 12px", textAlign: "center" }}>
+          <div style={{ fontSize: 26 }}>🌾</div>
+          <div style={{ fontSize: 12, color: C.muted, margin: "6px 0" }}>إجمالي الطيور عند بدء الدورات</div>
+          <div style={{ fontSize: 26, fontWeight: 900, color: C.accentD }}>{totalBirdsStart.toLocaleString()}</div>
+        </div>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 12px", textAlign: "center" }}>
+          <div style={{ fontSize: 26 }}>🐔</div>
+          <div style={{ fontSize: 12, color: C.muted, margin: "6px 0" }}>إجمالي طيور الموقع الحالي</div>
+          <div style={{ fontSize: 26, fontWeight: 900, color: C.accentD }}>{totalBirdsNow.toLocaleString()}</div>
+        </div>
+      </div>
+
+      <SectionDivider>اختر العنبر</SectionDivider>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
         {site.barns.map(barn => {
           const session = siteData?.sessions?.[barn];
           const hasSession = !!session;
@@ -3419,13 +3480,12 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
           const remaining = hasSession ? num(session.birdCount) - totalMort : 0;
           return (
             <div key={barn} onClick={() => onSelectBarn(siteId, barn)}
-              style={{ background: C.card, border: `2px solid ${hasSession ? C.green : C.border}`, borderRadius: 14, padding: 16, cursor: "pointer", transition: "all .2s", boxShadow: "0 1px 5px rgba(0,0,0,.05)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>🐔 {barn}</div>
-                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 16, background: hasSession ? `rgba(${hexToRgb(C.green)},.12)` : C.cardAlt, color: hasSession ? C.green : C.muted }}>{hasSession ? "نشطة ✅" : "فارغ"}</span>
-              </div>
+              style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 18, cursor: "pointer", transition: "all .2s", textAlign: "center", boxShadow: "0 1px 5px rgba(0,0,0,.05)" }}>
+              <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8 }}>{barn}</div>
+              <div style={{ fontSize: 34, marginBottom: 8 }}>🐔</div>
+              <div style={{ display: "inline-block", fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 16, background: hasSession ? `rgba(${hexToRgb(C.green)},.12)` : C.cardAlt, color: hasSession ? C.green : C.muted, marginBottom: 6 }}>{hasSession ? "نشطة ✅" : "فارغ"}</div>
               {hasSession ? (
-                <div style={{ fontSize: 11, color: C.muted }}>
+                <div style={{ fontSize: 11, color: C.muted, textAlign: "right" }}>
                   <div>📅 بداية: <strong style={{ color: C.text }}>{session.startDate}</strong></div>
                   <div>📆 العمر: <strong style={{ color: C.accent }}>{age} يوم</strong></div>
                   <div>🐔 الطيور: <strong style={{ color: C.text }}>{remaining.toLocaleString()}</strong></div>
@@ -3435,27 +3495,6 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
           );
         })}
       </div>
-
-      <div className="pg-sub">المخازن والتقارير</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-        <button onClick={() => onOpenStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.accent}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.accent }}>🌾 مخزن العلف</button>
-        <button onClick={() => onOpenMedStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.purple}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.purple }}>💊 مخزن الدواء</button>
-        <button onClick={() => onOpenGasStore(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.orange}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.orange }}>🔥 خزان الجاز</button>
-        <button onClick={() => onOpenInjections(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.red}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.red }}>💉 حقن وتقطير</button>
-        <button onClick={() => setShowReportsPage(true)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.blue}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.blue }}>📊 تقارير الموقع</button>
-        <button onClick={() => onOpenArchive(siteId)} style={{ flex: "1 1 140px", background: C.card, border: `1.5px solid ${C.muted}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontFamily: "Cairo", fontWeight: 700, fontSize: 12, color: C.text }}>📦 الأرشيف</button>
-      </div>
-
-      {(onArchiveSite || onDeleteSite) && (
-        <>
-          <div className="pg-sub">إدارة الموقع</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <button className="btn btn-n btn-sm" onClick={() => setShowReport(true)}>🖨️ طباعة تقرير سريع</button>
-            {onArchiveSite && activeBarns.length > 0 && <button className="btn btn-w btn-sm" onClick={() => setConfirm({ msg: `هيتم أرشفة كل العنابر النشطة في "${site.name}" (${activeBarns.length} عنبر) دفعة واحدة، مع أرشفة مخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير وتقرير الموقع خلال فترة كل دورة. الدورات هتتقفل ومتقدرش تسجل عليها تاني. متابعة؟`, fn: () => onArchiveSite(siteId) })}>📦 أرشفة الموقع بالكامل</button>}
-            {onDeleteSite && <button className="btn btn-d btn-sm" onClick={() => setConfirm({ msg: `هتمسح كل دورات "${site.name}" ومخزن العلف ومخزن الدواء وخزان الجاز وسجل الحقن والتقطير نهائي!`, fn: () => onDeleteSite(siteId) })}>🗑️ حذف الكل</button>}
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -3475,13 +3514,55 @@ const siteTheme = (siteId) => {
   return SITE_PALETTE[(idx >= 0 ? idx : 0) % SITE_PALETTE.length];
 };
 
-function HomePage({ data, onSelectSite, onSelectBarn, allowedSites }) {
+function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettings }) {
   const alerts = getFarmAlerts(data);
+  const [search, setSearch] = useState("");
+  const [sortAlpha, setSortAlpha] = useState(false);
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [openBarnPicker, setOpenBarnPicker] = useState(null);
+  const [showAlertsList, setShowAlertsList] = useState(false);
+
+  const totalActiveBarns = allowedSites.reduce((sum, site) => {
+    const sd = data?.sites?.[site.id];
+    return sum + site.barns.filter(b => sd?.sessions?.[b]).length;
+  }, 0);
+
+  let sites = allowedSites.filter(site => !search || site.name.toLowerCase().includes(search.toLowerCase()));
+  if (activeOnly) sites = sites.filter(site => site.barns.some(b => data?.sites?.[site.id]?.sessions?.[b]));
+  if (sortAlpha) sites = [...sites].sort((a, b) => a.name.localeCompare(b.name, "ar"));
+
+  const allBarnPills = allowedSites.flatMap(site => site.barns.map(barn => ({ site, barn, active: !!data?.sites?.[site.id]?.sessions?.[barn] })));
+
   return (
     <div>
       <div className="pg-title">🏠 لوحة التحكم</div>
       <div className="pg-sub">اختر موقعاً للبدء</div>
-      {alerts.length > 0 && (
+
+      {/* شريط البحث */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input className="inp" style={{ flex: 1 }} placeholder="🔍 البحث في المزارع..." value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      {/* شريط الإحصائيات */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <div onClick={() => setShowAlertsList(v => !v)} style={{ flex: "1 1 100px", cursor: alerts.length ? "pointer" : "default", background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 10px", textAlign: "center" }}>
+          <div style={{ fontSize: 20 }}>🔔</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: alerts.length ? C.red : C.text }}>{alerts.length}</div>
+          <div style={{ fontSize: 10, color: C.muted }}>تنبيهات</div>
+        </div>
+        <div style={{ flex: "1 1 100px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 10px", textAlign: "center" }}>
+          <div style={{ fontSize: 20 }}>🏚️</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: C.green }}>{totalActiveBarns}</div>
+          <div style={{ fontSize: 10, color: C.muted }}>أعنابر نشطة</div>
+        </div>
+        <div style={{ flex: "1 1 100px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 10px", textAlign: "center" }}>
+          <div style={{ fontSize: 20 }}>🌿</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: C.accent }}>{allowedSites.length}</div>
+          <div style={{ fontSize: 10, color: C.muted }}>إجمالي المزارع</div>
+        </div>
+      </div>
+
+      {showAlertsList && alerts.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           {alerts.map((a, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 8, padding: "8px 12px", marginBottom: 6, fontSize: 12 }}>
@@ -3491,32 +3572,70 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites }) {
           ))}
         </div>
       )}
-      <div className="home-grid">
-        {allowedSites.map(site => {
-          const sd = data?.sites?.[site.id];
-          const active = site.barns.filter(b => sd?.sessions?.[b]).length;
-          const theme = siteTheme(site.id);
-          return (
-            <div className="site-card" key={site.id} style={{ borderLeft: `5px solid ${theme.accent}` }} onClick={() => onSelectSite(site.id)}>
-              <div className="site-card-body">
-                <div className="site-card-title">{site.name} 🏠</div>
-                <div className="site-card-sub">
-                  <span className="site-card-sub-text">{site.barns.length} عنابر | {active} دورات نشطة</span>
-                  <span className="site-card-chevron">›</span>
+
+      {/* الترتيب والفلترة */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className={`btn btn-sm ${sortAlpha ? "btn-p" : "btn-n"}`} onClick={() => setSortAlpha(v => !v)}>↕️ الترتيب {sortAlpha ? "(أبجدي)" : "(افتراضي)"}</button>
+          <button className={`btn btn-sm ${activeOnly ? "btn-p" : "btn-n"}`} onClick={() => setActiveOnly(v => !v)}>🔽 {activeOnly ? "النشطة فقط" : "جميع المزارع"}</button>
+        </div>
+        <div style={{ fontWeight: 800, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>مزارعنا 🌿</div>
+      </div>
+
+      {sites.length === 0 ? (
+        <div className="empty"><div className="ico">🔍</div><p>لا توجد مزارع مطابقة</p></div>
+      ) : sites.map(site => {
+        const sd = data?.sites?.[site.id];
+        const active = site.barns.filter(b => sd?.sessions?.[b]).length;
+        const theme = siteTheme(site.id);
+        const isPickerOpen = openBarnPicker === site.id;
+        return (
+          <div key={site.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 12, marginBottom: 14, boxShadow: "0 1px 6px rgba(0,0,0,.05)" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
+                background: `repeating-linear-gradient(45deg, rgba(${hexToRgb(theme.accent)},.14) 0px, rgba(${hexToRgb(theme.accent)},.14) 5px, transparent 5px, transparent 11px), linear-gradient(135deg, ${theme.g1}, ${theme.g2})`,
+              }}>{theme.icon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 900, fontSize: 15 }}>{site.name}</div>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 16, background: active > 0 ? `rgba(${hexToRgb(C.green)},.14)` : C.cardAlt, color: active > 0 ? C.green : C.muted }}>{active > 0 ? "● دورة نشطة" : "لا توجد دورة نشطة"}</span>
                 </div>
-                <div className="barn-tags">
-                  {site.barns.map(b => (
-                    <span key={b} className={`btag ${sd?.sessions?.[b] ? "on" : ""}`} onClick={e => { e.stopPropagation(); onSelectBarn(site.id, b); }}><span className="dot" />{b}</span>
-                  ))}
+                <div style={{ fontSize: 11, color: C.muted, margin: "4px 0 8px" }}>{site.barns.length} عنابر | {active} دورات نشطة</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
+                  <div onClick={() => setOpenBarnPicker(isPickerOpen ? null : site.id)} style={{ display: "flex", alignItems: "center", gap: 6, background: C.cardAlt, borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                    🏚️ أعنبر <span style={{ fontSize: 10 }}>{isPickerOpen ? "▲" : "▼"}</span>
+                  </div>
+                  <button className="btn btn-p btn-sm" style={{ flex: 1, background: C.green, border: "none" }} onClick={() => onSelectSite(site.id)}>← دخول المزرعة</button>
                 </div>
-              </div>
-              <div className="site-card-img" style={{ background: `repeating-linear-gradient(45deg, rgba(${hexToRgb(theme.accent)},.14) 0px, rgba(${hexToRgb(theme.accent)},.14) 5px, transparent 5px, transparent 11px), linear-gradient(135deg, ${theme.g1}, ${theme.g2})` }}>
-                {theme.icon}
-                <div className="emblem" style={{ color: theme.accent }}>🏭</div>
+                {isPickerOpen && (
+                  <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", background: C.input, borderRadius: 10, padding: 8 }}>
+                    {site.barns.map(b => (
+                      <span key={b} onClick={() => { setOpenBarnPicker(null); onSelectBarn(site.id, b); }} className={`btag ${sd?.sessions?.[b] ? "on" : ""}`}><span className="dot" />{b}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-          );
-        })}
+          </div>
+        );
+      })}
+
+      {allBarnPills.length > 0 && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "6px 2px 14px" }}>
+          {allBarnPills.map((p, i) => (
+            <span key={i} onClick={() => onSelectBarn(p.site.id, p.barn)} className={`btag ${p.active ? "on" : ""}`} style={{ flexShrink: 0, cursor: "pointer" }}><span className="dot" />{p.barn}</span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-around", borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 6 }}>
+        <div onClick={onOpenSettings} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", color: C.muted, fontSize: 11 }}>
+          <span style={{ fontSize: 20 }}>⚙️</span>الإعدادات
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: C.green, fontSize: 11, fontWeight: 700 }}>
+          <span style={{ fontSize: 20 }}>🏠</span>الرئيسية
+        </div>
       </div>
     </div>
   );
@@ -3769,7 +3888,7 @@ export default function App() {
       if (showInjections && selectedSite) return <InjectionsPage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowInjections(false)} />;
       if (selectedSite && selectedBarn) return <BarnPage siteId={selectedSite} barnName={selectedBarn} data={data} onUpdate={updateData} canEdit={canEdit} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setSelectedBarn(null)} />;
       if (selectedSite && !selectedBarn) return <SitePage siteId={selectedSite} data={data} onSelectBarn={selectBarn} onDeleteSite={isAdmin ? deleteSite : null} onArchiveSite={isAdmin ? archiveSite : null} onBack={goHome} onOpenStore={openStore} onOpenMedStore={openMedStore} onOpenGasStore={openGasStore} onOpenInjections={openInjections} onOpenArchive={openArchive} currentUser={currentUser} />;
-      return <HomePage data={data} onSelectSite={selectSite} onSelectBarn={selectBarn} allowedSites={allowedSites} />;
+      return <HomePage data={data} onSelectSite={selectSite} onSelectBarn={selectBarn} allowedSites={allowedSites} onOpenSettings={() => { setShowSettings(true); setShowAiChat(false); setShowArchive(false); setSelectedBarn(null); setShowStore(false); }} />;
     } catch (e) {
       return <div className="empty"><div className="ico">⚠️</div><p>حدث خطأ</p><button className="btn btn-p" style={{ marginTop: 12 }} onClick={goHome}>🏠 الرئيسية</button></div>;
     }
@@ -3812,8 +3931,15 @@ export default function App() {
           <div className="sec-lbl">المواقع والعنابر</div>
           {allowedSites.map(site => (
             <div key={site.id}>
-              <button className={`site-btn ${selectedSite === site.id && !selectedBarn && !showStore ? "active" : ""}`} onClick={() => { setExpanded(e => ({ ...e, [site.id]: !e[site.id] })); selectSite(site.id); }}>
-                <span>🏭</span><span style={{ flex: 1 }}>{site.name}</span><span style={{ fontSize: 10 }}>{expanded[site.id] ? "▲" : "▼"}</span>
+              <button className={`site-btn ${selectedSite === site.id && !selectedBarn && !showStore ? "active" : ""}`} onClick={() => selectSite(site.id)}>
+                <span>🏭</span><span style={{ flex: 1 }}>{site.name}</span>
+                <span
+                  onClick={e => { e.stopPropagation(); setExpanded(ex => ({ ...ex, [site.id]: !ex[site.id] })); }}
+                  style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, padding: "2px 6px", borderRadius: 10, background: `rgba(${hexToRgb(C.accent)},.12)` }}
+                >
+                  {!expanded[site.id] && <span>{site.barns.length} عنابر</span>}
+                  <span>{expanded[site.id] ? "▲" : "▼"}</span>
+                </span>
               </button>
               {expanded[site.id] && (
                 <>
