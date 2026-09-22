@@ -3537,34 +3537,34 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
       <div className="pg-sub">اختر موقعاً للبدء</div>
 
       {/* شريط البحث */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <input className="inp" style={{ flex: 1 }} placeholder="🔍 البحث في المزارع..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <input className="inp" style={{ flex: 1, fontSize: 12, padding: "7px 10px" }} placeholder="🔍 البحث في المزارع..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       {/* شريط الإحصائيات */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        <div onClick={() => setShowAlertsList(v => !v)} style={{ flex: "1 1 100px", cursor: alerts.length ? "pointer" : "default", background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 10px", textAlign: "center" }}>
-          <div style={{ fontSize: 20 }}>🔔</div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: alerts.length ? C.red : C.text }}>{alerts.length}</div>
-          <div style={{ fontSize: 10, color: C.muted }}>تنبيهات</div>
+      <div style={{ display: "flex", gap: 7, marginBottom: 12, flexWrap: "wrap" }}>
+        <div onClick={() => setShowAlertsList(v => !v)} style={{ flex: "1 1 90px", cursor: alerts.length ? "pointer" : "default", background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "9px 7px", textAlign: "center" }}>
+          <div style={{ fontSize: 15 }}>🔔</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: alerts.length ? C.red : C.text }}>{alerts.length}</div>
+          <div style={{ fontSize: 9, color: C.muted }}>تنبيهات</div>
         </div>
-        <div style={{ flex: "1 1 100px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 10px", textAlign: "center" }}>
-          <div style={{ fontSize: 20 }}>🏚️</div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: C.green }}>{totalActiveBarns}</div>
-          <div style={{ fontSize: 10, color: C.muted }}>أعنابر نشطة</div>
+        <div style={{ flex: "1 1 90px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "9px 7px", textAlign: "center" }}>
+          <div style={{ fontSize: 15 }}>🏚️</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: C.green }}>{totalActiveBarns}</div>
+          <div style={{ fontSize: 9, color: C.muted }}>أعنابر نشطة</div>
         </div>
-        <div style={{ flex: "1 1 100px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "12px 10px", textAlign: "center" }}>
-          <div style={{ fontSize: 20 }}>🌿</div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: C.accent }}>{allowedSites.length}</div>
-          <div style={{ fontSize: 10, color: C.muted }}>إجمالي المزارع</div>
+        <div style={{ flex: "1 1 90px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "9px 7px", textAlign: "center" }}>
+          <div style={{ fontSize: 15 }}>🌿</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: C.accent }}>{allowedSites.length}</div>
+          <div style={{ fontSize: 9, color: C.muted }}>إجمالي المزارع</div>
         </div>
       </div>
 
       {showAlertsList && alerts.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 12 }}>
           {alerts.map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 8, padding: "8px 12px", marginBottom: 6, fontSize: 12 }}>
-              <span style={{ fontSize: 16 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 7, padding: "6px 10px", marginBottom: 5, fontSize: 10 }}>
+              <span style={{ fontSize: 13 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
               <span><strong>{a.siteName} — {a.barn}:</strong> {a.message}</span>
             </div>
           ))}
@@ -3572,12 +3572,12 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
       )}
 
       {/* الترتيب والفلترة */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className={`btn btn-sm ${sortAlpha ? "btn-p" : "btn-n"}`} onClick={() => setSortAlpha(v => !v)}>↕️ الترتيب {sortAlpha ? "(أبجدي)" : "(افتراضي)"}</button>
-          <button className={`btn btn-sm ${activeOnly ? "btn-p" : "btn-n"}`} onClick={() => setActiveOnly(v => !v)}>🔽 {activeOnly ? "النشطة فقط" : "جميع المزارع"}</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button className={`btn btn-xs ${sortAlpha ? "btn-p" : "btn-n"}`} onClick={() => setSortAlpha(v => !v)}>↕️ الترتيب {sortAlpha ? "(أبجدي)" : "(افتراضي)"}</button>
+          <button className={`btn btn-xs ${activeOnly ? "btn-p" : "btn-n"}`} onClick={() => setActiveOnly(v => !v)}>🔽 {activeOnly ? "النشطة فقط" : "جميع المزارع"}</button>
         </div>
-        <div style={{ fontWeight: 800, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>مزارعنا 🌿</div>
+        <div style={{ fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>مزارعنا 🌿</div>
       </div>
 
       {sites.length === 0 ? (
@@ -3588,26 +3588,26 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
         const theme = siteTheme(site.id);
         const isPickerOpen = openBarnPicker === site.id;
         return (
-          <div key={site.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 12, marginBottom: 14, boxShadow: "0 1px 6px rgba(0,0,0,.05)" }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <div key={site.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 9, marginBottom: 10, boxShadow: "0 1px 6px rgba(0,0,0,.05)" }}>
+            <div style={{ display: "flex", gap: 9, alignItems: "flex-start", flexDirection: "row-reverse" }}>
               <div style={{
-                width: 64, height: 64, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
+                width: 48, height: 48, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19,
                 background: `repeating-linear-gradient(45deg, rgba(${hexToRgb(theme.accent)},.14) 0px, rgba(${hexToRgb(theme.accent)},.14) 5px, transparent 5px, transparent 11px), linear-gradient(135deg, ${theme.g1}, ${theme.g2})`,
               }}>{theme.icon}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 900, fontSize: 15 }}>{site.name}</div>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 16, background: active > 0 ? `rgba(${hexToRgb(C.green)},.14)` : C.cardAlt, color: active > 0 ? C.green : C.muted }}>{active > 0 ? "● دورة نشطة" : "لا توجد دورة نشطة"}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 5, flexWrap: "wrap", flexDirection: "row-reverse" }}>
+                  <div style={{ fontWeight: 900, fontSize: 12 }}>{site.name}</div>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 13, background: active > 0 ? `rgba(${hexToRgb(C.green)},.14)` : C.cardAlt, color: active > 0 ? C.green : C.muted }}>{active > 0 ? "● دورة نشطة" : "لا توجد دورة نشطة"}</span>
                 </div>
-                <div style={{ fontSize: 11, color: C.muted, margin: "4px 0 8px" }}>{site.barns.length} عنابر | {active} دورات نشطة</div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
-                  <div onClick={() => setOpenBarnPicker(isPickerOpen ? null : site.id)} style={{ display: "flex", alignItems: "center", gap: 6, background: C.cardAlt, borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
-                    🏚️ أعنبر <span style={{ fontSize: 10 }}>{isPickerOpen ? "▲" : "▼"}</span>
+                <div style={{ fontSize: 9, color: C.muted, margin: "3px 0 6px", textAlign: "left" }}>{site.barns.length} عنابر | {active} دورات نشطة</div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", position: "relative", flexDirection: "row-reverse" }}>
+                  <div onClick={() => setOpenBarnPicker(isPickerOpen ? null : site.id)} style={{ display: "flex", alignItems: "center", gap: 5, background: C.cardAlt, borderRadius: 8, padding: "5px 8px", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+                    🏚️ أعنبر <span style={{ fontSize: 9 }}>{isPickerOpen ? "▲" : "▼"}</span>
                   </div>
-                  <button className="btn btn-p btn-sm" style={{ flex: 1, background: C.green, border: "none" }} onClick={() => onSelectSite(site.id)}>← دخول المزرعة</button>
+                  <button className="btn btn-p btn-xs" style={{ flex: 1, background: C.green, border: "none" }} onClick={() => onSelectSite(site.id)}>← دخول المزرعة</button>
                 </div>
                 {isPickerOpen && (
-                  <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", background: C.input, borderRadius: 10, padding: 8 }}>
+                  <div style={{ marginTop: 6, display: "flex", gap: 5, flexWrap: "wrap", background: C.input, borderRadius: 8, padding: 6 }}>
                     {site.barns.map(b => (
                       <span key={b} onClick={() => { setOpenBarnPicker(null); onSelectBarn(site.id, b); }} className={`btag ${sd?.sessions?.[b] ? "on" : ""}`}><span className="dot" />{b}</span>
                     ))}
@@ -3619,12 +3619,12 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
         );
       })}
 
-      <div style={{ display: "flex", justifyContent: "space-around", borderTop: `1px solid ${C.border}`, paddingTop: 12, marginTop: 6 }}>
-        <div onClick={onOpenSettings} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer", color: C.muted, fontSize: 11 }}>
-          <span style={{ fontSize: 20 }}>⚙️</span>الإعدادات
+      <div style={{ display: "flex", justifyContent: "space-around", borderTop: `1px solid ${C.border}`, paddingTop: 7, marginTop: 3 }}>
+        <div onClick={onOpenSettings} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", color: C.muted, fontSize: 8 }}>
+          <span style={{ fontSize: 15 }}>⚙️</span>الإعدادات
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: C.green, fontSize: 11, fontWeight: 700 }}>
-          <span style={{ fontSize: 20 }}>🏠</span>الرئيسية
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: C.green, fontSize: 8, fontWeight: 700 }}>
+          <span style={{ fontSize: 15 }}>🏠</span>الرئيسية
         </div>
       </div>
     </div>
