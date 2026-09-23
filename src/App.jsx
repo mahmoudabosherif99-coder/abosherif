@@ -543,10 +543,10 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
   const today = new Date().toISOString().split("T")[0];
   const hideFeed = siteId === "qatour"; // عنبر قطور: بدون تسجيل علف في الشفتين
   const [form, setForm] = useState({ id: genId(), date: today, night: emptyShift(), day: emptyShift(), medicines: [] });
-  const [medForm, setMedForm] = useState({ name: "", hours: "" });
+  const [medForm, setMedForm] = useState({ name: "", hours: "", conc: "" });
   const [saved, setSaved] = useState(false);
   const [editRec, setEditRec] = useState(null);
-  const [editMedForm, setEditMedForm] = useState({ name: "", hours: "" });
+  const [editMedForm, setEditMedForm] = useState({ name: "", hours: "", conc: "" });
   const [confirm, setConfirm] = useState(null);
   const [err, setErr] = useState("");
   const [editErr, setEditErr] = useState("");
@@ -555,8 +555,8 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
 
   const addMed = () => {
     if (!medForm.name.trim()) return;
-    setForm(p => ({ ...p, medicines: [...p.medicines, { id: genId(), name: medForm.name.trim(), hours: medForm.hours }] }));
-    setMedForm({ name: "", hours: "" });
+    setForm(p => ({ ...p, medicines: [...p.medicines, { id: genId(), name: medForm.name.trim(), hours: medForm.hours, conc: medForm.conc }] }));
+    setMedForm({ name: "", hours: "", conc: "" });
   };
 
   const save = () => {
@@ -580,8 +580,8 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
 
   const addEditMed = () => {
     if (!editMedForm.name.trim()) return;
-    setEditRec(p => ({ ...p, medicines: [...(p.medicines || []), { id: genId(), name: editMedForm.name.trim(), hours: editMedForm.hours }] }));
-    setEditMedForm({ name: "", hours: "" });
+    setEditRec(p => ({ ...p, medicines: [...(p.medicines || []), { id: genId(), name: editMedForm.name.trim(), hours: editMedForm.hours, conc: editMedForm.conc }] }));
+    setEditMedForm({ name: "", hours: "", conc: "" });
   };
 
   const deleteRec = (id) => {
@@ -614,14 +614,16 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
 
             <div style={{ marginTop: 14 }}>
               <label className="lbl" style={{ display: "block", marginBottom: 6 }}>💊 أدوية اليوم ده</label>
-              <div className="g2" style={{ marginBottom: 8 }}>
+              <div className="g3" style={{ marginBottom: 8 }}>
                 <div className="fg"><input className="inp" placeholder="اسم الدواء" value={editMedForm.name} onChange={e => setEditMedForm(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === "Enter" && addEditMed()} /></div>
+                <div className="fg"><input className="inp" placeholder="التركيز" value={editMedForm.conc} onChange={e => setEditMedForm(p => ({ ...p, conc: e.target.value }))} onKeyDown={e => e.key === "Enter" && addEditMed()} /></div>
                 <div className="fg"><input className="inp" type="number" placeholder="عدد الساعات" value={editMedForm.hours} onChange={e => setEditMedForm(p => ({ ...p, hours: e.target.value }))} onKeyDown={e => e.key === "Enter" && addEditMed()} /></div>
               </div>
               <button className="btn btn-n btn-sm" onClick={addEditMed}>+ إضافة دواء</button>
               {(editRec.medicines || []).map((m, i) => (
                 <div key={m.id || i} style={{ display: "flex", gap: 8, padding: "5px 10px", background: C.input, borderRadius: 6, marginTop: 6, fontSize: 11, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 700 }}>💊 {m.name}</span>
+                  {m.conc && <span className="badge bb">🧪 {m.conc}</span>}
                   {m.hours && <span className="badge by">⏱️ {m.hours} ساعة</span>}
                   <button style={{ marginRight: "auto", background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 13 }} onClick={() => setEditRec(p => ({ ...p, medicines: p.medicines.filter((_, j) => j !== i) }))}>✕</button>
                 </div>
@@ -664,10 +666,14 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
 
       <div className="card">
         <div className="card-t">💊 الأدوية المستخدمة اليوم</div>
-        <div className="g2" style={{ marginBottom: 10 }}>
+        <div className="g3" style={{ marginBottom: 10 }}>
           <div className="fg">
             <label className="lbl">اسم الدواء المستخدم</label>
             <input className="inp" value={medForm.name} onChange={e => setMedForm(p => ({ ...p, name: e.target.value }))} onKeyDown={e => e.key === "Enter" && addMed()} placeholder="اكتب اسم الدواء" />
+          </div>
+          <div className="fg">
+            <label className="lbl">التركيز</label>
+            <input className="inp" value={medForm.conc} onChange={e => setMedForm(p => ({ ...p, conc: e.target.value }))} onKeyDown={e => e.key === "Enter" && addMed()} placeholder="مثال: 1 جم / لتر" />
           </div>
           <div className="fg">
             <label className="lbl">عدد الساعات</label>
@@ -678,6 +684,7 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
         {form.medicines.map((m, i) => (
           <div key={i} style={{ display: "flex", gap: 8, padding: "5px 10px", background: C.input, borderRadius: 6, marginTop: 6, fontSize: 11, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontWeight: 700 }}>💊 {m.name}</span>
+            {m.conc && <span className="badge bb">🧪 {m.conc}</span>}
             {m.hours && <span className="badge by">⏱️ {m.hours} ساعة</span>}
             <button style={{ marginRight: "auto", background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 13 }} onClick={() => setForm(p => ({ ...p, medicines: p.medicines.filter((_, j) => j !== i) }))}>✕</button>
           </div>
@@ -933,7 +940,7 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
 
   const saveEdit = () => {
     if (!onEditMed || !editEntry) return;
-    onEditMed(editEntry.recordId, editEntry.id, editEntry.name, editEntry.hours);
+    onEditMed(editEntry.recordId, editEntry.id, editEntry.name, editEntry.hours, editEntry.conc);
     setEditEntry(null);
   };
 
@@ -980,6 +987,10 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
               <input className="inp" value={editEntry.name} onChange={e => setEditEntry(p => ({ ...p, name: e.target.value }))} />
             </div>
             <div className="fg" style={{ marginBottom: 12 }}>
+              <label className="lbl">التركيز</label>
+              <input className="inp" value={editEntry.conc || ""} onChange={e => setEditEntry(p => ({ ...p, conc: e.target.value }))} />
+            </div>
+            <div className="fg" style={{ marginBottom: 12 }}>
               <label className="lbl">عدد الساعات</label>
               <input className="inp" type="number" value={editEntry.hours || ""} onChange={e => setEditEntry(p => ({ ...p, hours: e.target.value }))} />
             </div>
@@ -1018,7 +1029,7 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
             <div className="card-t">📅 سجل الأدوية يوم بيوم</div>
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><th>التاريخ</th><th>العمر</th><th>الدواء</th><th>عدد الساعات</th>{(onEditMed || onDeleteMed) && <th>إجراء</th>}</tr></thead>
+                <thead><tr><th>التاريخ</th><th>العمر</th><th>الدواء</th><th>التركيز</th><th>عدد الساعات</th>{(onEditMed || onDeleteMed) && <th>إجراء</th>}</tr></thead>
                 <tbody>
                   {Object.entries(allMeds.reduce((acc, m) => {
                     (acc[m.date] = acc[m.date] || []).push(m);
@@ -1029,6 +1040,7 @@ function MedicineTab({ session, onEditMed, onDeleteMed, barnName, siteName, curr
                         {j === 0 && <td rowSpan={meds.length}>{date}</td>}
                         {j === 0 && <td rowSpan={meds.length}><span className="badge by">{meds[0].age} يوم</span></td>}
                         <td style={{ color: "#7b2d8b", fontWeight: 700 }}>💊 {m.name}</td>
+                        <td>{m.conc || "-"}</td>
                         <td>{m.hours ? `${m.hours} ساعة` : "-"}</td>
                         {(onEditMed || onDeleteMed) && (
                           <td>
@@ -1992,13 +2004,13 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
   };
 
   // Edits a medicine entry's name/hours inside a specific daily record (no stock tracking anymore)
-  const editMedInRecord = (recordId, medId, newName, newHours) => {
+  const editMedInRecord = (recordId, medId, newName, newHours, newConc) => {
     if (!onUpdate) return { ok: false, err: "لا تملك صلاحية" };
     const d = JSON.parse(JSON.stringify(data));
     const recs = d.sites[siteId].sessions[barnName].dailyRecords;
     const rec = recs.find(r => r.id === recordId);
     if (!rec) return { ok: false, err: "السجل غير موجود" };
-    rec.medicines = (rec.medicines || []).map(m => m.id === medId ? { ...m, name: newName, hours: newHours } : m);
+    rec.medicines = (rec.medicines || []).map(m => m.id === medId ? { ...m, name: newName, hours: newHours, conc: newConc } : m);
     onUpdate(d);
     return { ok: true };
   };
