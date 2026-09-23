@@ -496,22 +496,38 @@ function Login({ onLogin }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      background: `radial-gradient(circle at 30% 20%, ${C.g1 || "#F3E2B4"}, ${C.bg} 60%), repeating-linear-gradient(115deg, rgba(${hexToRgb(C.accent)},.05) 0px, rgba(${hexToRgb(C.accent)},.05) 2px, transparent 2px, transparent 26px)`,
+    }}>
       <style>{css}</style>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 32, width: "100%", maxWidth: 320, textAlign: "center", boxShadow: "0 4px 20px rgba(0,0,0,.1)" }}>
-        <img src="/logo.png" alt="مزارع أبوشريف" style={{ width: 175, height: 175, objectFit: "contain", marginBottom: 10 }} onError={e => { e.target.style.display='none'; }} />
-        <div style={{ fontSize: 22, fontWeight: 800, color: C.accent, marginBottom: 2, letterSpacing: 2 }}>مزارع أبوشريف</div>
-        <div style={{ fontSize: 10, color: C.muted, marginBottom: 22 }}>MAZARIE ABO SHERIF</div>
-        {err && <div className="alert alert-err">{err}</div>}
-        <div className="fg" style={{ textAlign: "right", marginBottom: 10 }}>
-          <label className="lbl">👤 اسم المستخدم</label>
-          <input className="inp" value={username} onChange={e => setUsername(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} autoFocus />
+      <div style={{ width: "100%", maxWidth: 330 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", boxShadow: "0 10px 34px rgba(0,0,0,.14)" }}>
+          <div style={{ height: 6, background: `linear-gradient(90deg, ${C.accent}, ${C.green})` }} />
+          <div style={{ padding: "30px 28px 28px", textAlign: "center" }}>
+            <div style={{
+              width: 108, height: 108, borderRadius: "50%", margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center",
+              background: `radial-gradient(circle, ${C.cardAlt}, ${C.bg})`, border: `1px solid ${C.border}`,
+            }}>
+              <img src="/logo.png" alt="مزارع أبوشريف" style={{ width: 78, height: 78, objectFit: "contain" }} onError={e => { e.target.style.display = 'none'; }} />
+            </div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: C.accentD || C.accent, marginBottom: 2, letterSpacing: 1 }}>مزارع أبوشريف</div>
+            <div style={{ fontSize: 9, color: C.muted, letterSpacing: 3, marginBottom: 6 }}>MAZARIE ABO SHERIF</div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 22 }}>نظام إدارة مزارع الدواجن</div>
+
+            {err && <div className="alert alert-err">{err}</div>}
+            <div className="fg" style={{ textAlign: "right", marginBottom: 10 }}>
+              <label className="lbl">👤 اسم المستخدم</label>
+              <input className="inp" value={username} onChange={e => setUsername(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} autoFocus />
+            </div>
+            <div className="fg" style={{ textAlign: "right", marginBottom: 18 }}>
+              <label className="lbl">🔒 كلمة المرور</label>
+              <input className="inp" type="password" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} />
+            </div>
+            <button className="btn btn-p" style={{ width: "100%", fontSize: 13, padding: "11px" }} onClick={go} disabled={loading}>{loading ? "جاري التحقق..." : "دخول ←"}</button>
+          </div>
         </div>
-        <div className="fg" style={{ textAlign: "right", marginBottom: 18 }}>
-          <label className="lbl">🔒 كلمة المرور</label>
-          <input className="inp" type="password" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} />
-        </div>
-        <button className="btn btn-p" style={{ width: "100%", fontSize: 13, padding: "10px" }} onClick={go} disabled={loading}>{loading ? "جاري التحقق..." : "دخول"}</button>
+        <div style={{ textAlign: "center", fontSize: 10, color: C.muted, marginTop: 16 }}>🌾 إدارة، متابعة، وتقارير — كل مزرعتك في مكان واحد</div>
       </div>
     </div>
   );
@@ -1913,6 +1929,12 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
     d.sites[siteId].sessions[barnName] = { ...currentSession, dailyRecords: [...(currentSession.dailyRecords || []), record] };
 
     onUpdate(d);
+
+    // إشعار واتساب تلقائي بعد كل تسجيل يومي جديد
+    const siteNameForMsg = SITES.find(s => s.id === siteId)?.name || siteId;
+    const msg = `📋 تسجيل يومي جديد\nالموقع: ${siteNameForMsg}\nالعنبر: ${barnName}\nالتاريخ: ${record.date}\nالنافق (ليل/نهار): ${num(record.night.mortality)} / ${num(record.day.mortality)}\nالعلف (ليل/نهار): ${num(record.night.feed)} / ${num(record.day.feed)} كجم`;
+    fetch("/api/send-whatsapp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: msg }) }).catch(() => {});
+
     return { ok: true };
   };
 
