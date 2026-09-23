@@ -344,7 +344,7 @@ body{font-family:'Cairo',sans-serif;background:${C.bg};color:${C.text};direction
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}
 input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 
-.topbar{background:${C.card};border-bottom:3px solid ${C.accent};padding:0 14px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(${hexToRgb(C.text)},.08)}
+.topbar{background:linear-gradient(180deg, ${C.card}, ${C.input});border-bottom:3px solid transparent;border-image:linear-gradient(90deg, ${C.accent}, ${C.green}) 1;padding:0 14px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(${hexToRgb(C.text)},.08)}
 .logo{font-size:18px;font-weight:800;color:${C.accent};display:flex;align-items:center;gap:8px;letter-spacing:1.5px}
 .logo-sub{font-size:10px;color:${C.muted};font-weight:600}
 .menu-btn{background:none;border:none;color:${C.text};font-size:22px;cursor:pointer;padding:4px 8px}
@@ -368,9 +368,10 @@ input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 .card{background:${C.card};border:1px solid ${C.border};border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 5px rgba(${hexToRgb(C.text)},.05)}
 .card-t{font-size:13px;font-weight:800;color:${C.text};margin-bottom:12px;display:flex;align-items:center;gap:5px}
 
-.btn{padding:8px 16px;border-radius:8px;border:none;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:4px}
-.btn-p{background:${C.accent};color:#fff}.btn-p:hover{background:${C.accentD}}
-.btn-s{background:${C.green};color:#fff}.btn-s:hover{filter:brightness(1.12)}
+.btn{padding:8px 16px;border-radius:8px;border:none;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
+.btn:active{transform:scale(.96)}
+.btn-p{background:${C.accent};color:#fff;box-shadow:0 2px 8px rgba(${hexToRgb(C.accent)},.3)}.btn-p:hover{background:${C.accentD};box-shadow:0 3px 10px rgba(${hexToRgb(C.accent)},.4)}
+.btn-s{background:${C.green};color:#fff;box-shadow:0 2px 8px rgba(${hexToRgb(C.green)},.28)}.btn-s:hover{filter:brightness(1.12)}
 .btn-d{background:${C.red};color:#fff}.btn-d:hover{filter:brightness(1.12)}
 .btn-n{background:${C.cardAlt};color:${C.text};border:1px solid ${C.border}}.btn-n:hover{border-color:${C.accent};color:${C.accentD}}
 .btn-w{background:rgba(${hexToRgb(C.orange)},.13);color:${C.orange};border:1px solid rgba(${hexToRgb(C.orange)},.4)}
@@ -402,20 +403,21 @@ input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 .sl{font-size:11px;color:${C.muted};margin-top:3px;font-weight:700}
 .cg{color:${C.green}}.cr{color:${C.red}}.cy{color:${C.accent}}.cb{color:${C.blue}}.cp{color:${C.purple}}
 
-.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl{width:100%;border-collapse:collapse;font-size:12px;border-radius:8px;overflow:hidden}
 .tbl th{background:${C.cardAlt};padding:9px 8px;text-align:center;color:${C.text};font-weight:800;border-bottom:2px solid ${C.border}}
 .tbl td{padding:8px 8px;text-align:center;border-bottom:1px solid ${C.border};color:${C.text}}
-.tbl tr:hover td{background:rgba(${hexToRgb(C.accent)},.04)}
+.tbl tr:nth-child(even) td{background:rgba(${hexToRgb(C.accent)},.025)}
+.tbl tr:hover td{background:rgba(${hexToRgb(C.accent)},.06)}
 
 .tabs{display:flex;gap:3px;margin-bottom:16px;background:${C.cardAlt};padding:3px;border-radius:10px;width:fit-content;flex-wrap:wrap}
 .tab{padding:7px 14px;border-radius:7px;border:none;font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;background:none;color:${C.muted}}
 .tab.active{background:${C.accent};color:#fff;box-shadow:0 2px 6px rgba(${hexToRgb(C.accent)},.35)}
 
-.badge{display:inline-block;padding:2px 8px;border-radius:16px;font-size:11px;font-weight:700}
-.bg{background:rgba(${hexToRgb(C.green)},.12);color:${C.green}}
-.br{background:rgba(${hexToRgb(C.red)},.12);color:${C.red}}
-.by{background:rgba(${hexToRgb(C.accent)},.12);color:${C.accentD}}
-.bb{background:rgba(${hexToRgb(C.blue)},.12);color:${C.blue}}
+.badge{display:inline-block;padding:2px 8px;border-radius:16px;font-size:11px;font-weight:700;border:1px solid transparent}
+.bg{background:rgba(${hexToRgb(C.green)},.12);color:${C.green};border-color:rgba(${hexToRgb(C.green)},.25)}
+.br{background:rgba(${hexToRgb(C.red)},.12);color:${C.red};border-color:rgba(${hexToRgb(C.red)},.25)}
+.by{background:rgba(${hexToRgb(C.accent)},.12);color:${C.accentD};border-color:rgba(${hexToRgb(C.accent)},.25)}
+.bb{background:rgba(${hexToRgb(C.blue)},.12);color:${C.blue};border-color:rgba(${hexToRgb(C.blue)},.25)}
 
 .alert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:12px;font-weight:700}
 .alert-ok{background:rgba(${hexToRgb(C.green)},.1);border:1px solid rgba(${hexToRgb(C.green)},.3);color:${C.green}}
@@ -437,11 +439,12 @@ input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 .btag.on{background:rgba(${hexToRgb(C.green)},.1);color:${C.green};border-color:rgba(${hexToRgb(C.green)},.3)}
 .btag.on .dot{background:${C.green}}
 
-.empty{text-align:center;padding:40px 20px;color:${C.muted}}
-.empty .ico{font-size:40px;margin-bottom:10px}
+.empty{text-align:center;padding:36px 20px;color:${C.muted};background:${C.cardAlt};border:1.5px dashed ${C.border};border-radius:14px}
+.empty .ico{font-size:38px;margin-bottom:10px;opacity:.85}
 
 .modal-bg{position:fixed;inset:0;background:rgba(${hexToRgb(C.text)},.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:14px}
-.modal{background:${C.card};border:1.5px solid ${C.border};border-radius:14px;padding:22px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(${hexToRgb(C.text)},.18)}
+.modal{position:relative;background:${C.card};border:1.5px solid ${C.border};border-radius:14px;padding:22px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(${hexToRgb(C.text)},.18)}
+.modal::before{content:"";position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,${C.accent},${C.green});border-radius:14px 14px 0 0}
 .modal-t{font-size:14px;font-weight:800;color:${C.accentD};margin-bottom:14px}
 
 @media(max-width:700px){
@@ -3930,10 +3933,10 @@ export default function App() {
             <div><div>مزارع أبوشريف</div><div className="logo-sub">MAZARIE ABO SHERIF</div></div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-          {syncStatus === "saving" && <span style={{ fontSize: 11, color: C.accent }}>⏳</span>}
-          {syncStatus === "saved" && <span style={{ fontSize: 11, color: C.green }}>✅</span>}
-          {syncStatus === "error" && <span style={{ fontSize: 11, color: C.red }}>❌</span>}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {syncStatus === "saving" && <span style={{ fontSize: 10, color: C.accent, background: `rgba(${hexToRgb(C.accent)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>⏳ جاري الحفظ</span>}
+          {syncStatus === "saved" && <span style={{ fontSize: 10, color: C.green, background: `rgba(${hexToRgb(C.green)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>✅ محفوظ</span>}
+          {syncStatus === "error" && <span style={{ fontSize: 10, color: C.red, background: `rgba(${hexToRgb(C.red)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>❌ خطأ في الحفظ</span>}
           <button className="btn btn-n btn-sm" onClick={goHome}>🏠</button>
         </div>
       </div>
