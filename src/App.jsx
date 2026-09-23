@@ -36,6 +36,11 @@ const syncCustomSites = (d) => {
   (d?.customSites || []).forEach(cs => {
     if (cs?.id && !SITES.find(s => s.id === cs.id)) SITES.push(cs);
   });
+  // الأسماء الجديدة اللي المدير غيّرها للمواقع
+  Object.entries(d?.siteNames || {}).forEach(([siteId, name]) => {
+    const s = SITES.find(x => x.id === siteId);
+    if (s && name) s.name = name;
+  });
   // العنابر اللي اتضافت بعدين لأي موقع (سواء موقع أساسي أو مُضاف) بتتزامن هنا
   Object.entries(d?.extraBarns || {}).forEach(([siteId, barns]) => {
     const s = SITES.find(x => x.id === siteId);
@@ -498,39 +503,48 @@ function Login({ onLogin }) {
     setLoading(false);
   };
 
-  return (
-    <div style={{
-      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-      background: `radial-gradient(circle at 30% 20%, ${C.g1 || "#F3E2B4"}, ${C.bg} 60%), repeating-linear-gradient(115deg, rgba(${hexToRgb(C.accent)},.05) 0px, rgba(${hexToRgb(C.accent)},.05) 2px, transparent 2px, transparent 26px)`,
-    }}>
-      <style>{css}</style>
-      <div style={{ width: "100%", maxWidth: 330 }}>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", boxShadow: "0 10px 34px rgba(0,0,0,.14)" }}>
-          <div style={{ height: 6, background: `linear-gradient(90deg, ${C.accent}, ${C.green})` }} />
-          <div style={{ padding: "30px 28px 28px", textAlign: "center" }}>
-            <div style={{
-              width: 108, height: 108, borderRadius: "50%", margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center",
-              background: `radial-gradient(circle, ${C.cardAlt}, ${C.bg})`, border: `1px solid ${C.border}`,
-            }}>
-              <img src="/logo.png" alt="مزارع أبوشريف" style={{ width: 78, height: 78, objectFit: "contain" }} onError={e => { e.target.style.display = 'none'; }} />
-            </div>
-            <div style={{ fontSize: 21, fontWeight: 900, color: C.accentD || C.accent, marginBottom: 2, letterSpacing: 1 }}>مزارع أبوشريف</div>
-            <div style={{ fontSize: 9, color: C.muted, letterSpacing: 3, marginBottom: 6 }}>MAZARIE ABO SHERIF</div>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 22 }}>نظام إدارة مزارع الدواجن</div>
+  const lblStyle = { display: "block", fontSize: 12, fontWeight: 800, color: C.muted, letterSpacing: .5, marginBottom: 8, textAlign: "right" };
+  const inpStyle = { width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${C.border}`, background: "#fff", fontSize: 14, color: C.text, outline: "none", fontFamily: "Cairo" };
 
-            {err && <div className="alert alert-err">{err}</div>}
-            <div className="fg" style={{ textAlign: "right", marginBottom: 10 }}>
-              <label className="lbl">👤 اسم المستخدم</label>
-              <input className="inp" value={username} onChange={e => setUsername(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} autoFocus />
-            </div>
-            <div className="fg" style={{ textAlign: "right", marginBottom: 18 }}>
-              <label className="lbl">🔒 كلمة المرور</label>
-              <input className="inp" type="password" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} />
-            </div>
-            <button className="btn btn-p" style={{ width: "100%", fontSize: 13, padding: "11px" }} onClick={go} disabled={loading}>{loading ? "جاري التحقق..." : "دخول ←"}</button>
-          </div>
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: C.input }}>
+      <style>{css}</style>
+
+      {/* الجزء العلوي الغامق بلون البرنامج */}
+      <div style={{
+        background: `linear-gradient(180deg, ${C.accent} 0%, ${C.accentD} 45%, #4E340D 100%)`,
+        minHeight: "34vh", display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 30, paddingBottom: 60,
+      }}>
+        <div style={{ width: 118, height: 118, borderRadius: 30, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 30px rgba(0,0,0,.28)" }}>
+          <img src="/logo.png" alt="مزارع أبوشريف" style={{ width: 88, height: 88, objectFit: "contain" }} onError={e => { e.target.style.display = 'none'; }} />
         </div>
-        <div style={{ textAlign: "center", fontSize: 10, color: C.muted, marginTop: 16 }}>🌾 إدارة، متابعة، وتقارير — كل مزرعتك في مكان واحد</div>
+      </div>
+
+      {/* اللوحة الفاتحة بحواف دائرية */}
+      <div style={{ flex: 1, background: C.input, borderRadius: "34px 34px 0 0", marginTop: -40, padding: "44px 26px 30px", boxShadow: "0 -4px 20px rgba(0,0,0,.06)" }}>
+        <div style={{ maxWidth: 380, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", fontSize: 28, fontWeight: 900, color: C.accentD, marginBottom: 6 }}>تسجيل الدخول</div>
+          <div style={{ textAlign: "center", fontSize: 14, color: C.muted, marginBottom: 30, lineHeight: 1.7 }}>دخول آمن لنظام إدارة مزارع أبوشريف</div>
+
+          {err && <div className="alert alert-err" style={{ marginBottom: 14 }}>{err}</div>}
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={lblStyle}>اسم المستخدم</label>
+            <input style={inpStyle} placeholder="اسم المستخدم" value={username} onChange={e => setUsername(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} autoFocus />
+          </div>
+          <div style={{ marginBottom: 28 }}>
+            <label style={lblStyle}>كلمة المرور</label>
+            <input style={inpStyle} type="password" placeholder="كلمة المرور" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} />
+          </div>
+
+          <button onClick={go} disabled={loading} style={{
+            width: "100%", padding: "15px", borderRadius: 14, border: "none", cursor: "pointer",
+            background: `linear-gradient(90deg, ${C.accentD}, ${C.accent})`, color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "Cairo",
+            boxShadow: `0 6px 16px rgba(${hexToRgb(C.accent)},.35)`, opacity: loading ? .7 : 1,
+          }}>{loading ? "جاري التحقق..." : "دخول"}</button>
+
+          <div style={{ textAlign: "center", fontSize: 11, color: C.muted, marginTop: 22 }}>MAZARIE ABO SHERIF</div>
+        </div>
       </div>
     </div>
   );
@@ -2505,6 +2519,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
 function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus, onEnableNotif, onDisableNotif }) {
   const isAdmin = currentUser?.role === "admin";
   const [activeTab, setActiveTab] = useState("backup");
+  const [renameForm, setRenameForm] = useState({});
   const [notifMsg, setNotifMsg] = useState("");
   const [notifBusy, setNotifBusy] = useState(false);
   const [backups, setBackups] = useState([]);
@@ -2579,6 +2594,20 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus,
     onUpdate(d);
     setNewSiteForm({ name: "", barnCount: "" });
     setSiteMsg("✅ تم إضافة الموقع"); setTimeout(() => setSiteMsg(""), 3000);
+  };
+
+  const renameSite = (siteId) => {
+    const site = SITES.find(s => s.id === siteId);
+    const name = (renameForm[siteId] || "").trim();
+    if (!site || !name || name === site.name) return;
+    if (SITES.some(s => s.id !== siteId && s.name === name)) { setSiteMsg("⚠️ فيه موقع بنفس الاسم ده"); setTimeout(() => setSiteMsg(""), 3000); return; }
+    site.name = name;
+    const d = JSON.parse(JSON.stringify(data));
+    d.siteNames = { ...(d.siteNames || {}), [siteId]: name };
+    if (d.customSites) d.customSites = d.customSites.map(cs => cs.id === siteId ? { ...cs, name } : cs);
+    onUpdate(d);
+    setRenameForm(p => ({ ...p, [siteId]: "" }));
+    setSiteMsg("✅ تم تغيير اسم الموقع"); setTimeout(() => setSiteMsg(""), 3000);
   };
 
   const addBarnsToSite = (siteId) => {
@@ -2711,6 +2740,10 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus,
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
                   <span style={{ fontWeight: 700 }}>🏭 {s.name}</span>
                   <span style={{ color: C.muted }}>{s.barns.length} عنابر{s.custom && <span className="badge by" style={{ marginRight: 6 }}>مُضاف</span>}</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+                  <input className="inp" style={{ flex: 1 }} placeholder="الاسم الجديد للموقع" value={renameForm[s.id] || ""} onChange={e => setRenameForm(p => ({ ...p, [s.id]: e.target.value }))} onKeyDown={e => e.key === "Enter" && renameSite(s.id)} />
+                  <button className="btn btn-n btn-xs" onClick={() => renameSite(s.id)}>✏️ تغيير الاسم</button>
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
                   <input className="inp" type="number" min="1" style={{ maxWidth: 90 }} placeholder="عدد" value={addBarnForm[s.id] || ""} onChange={e => setAddBarnForm(p => ({ ...p, [s.id]: e.target.value }))} />
