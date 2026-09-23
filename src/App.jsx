@@ -3550,6 +3550,13 @@ const siteTheme = (siteId) => {
   const idx = SITES.findIndex(s => s.id === siteId);
   return SITE_PALETTE[(idx >= 0 ? idx : 0) % SITE_PALETTE.length];
 };
+// صور حقيقية لكل موقع (اختيارية) — لو الموقع مش موجود هنا، بيرجع للتصميم بالتدرج اللوني
+const SITE_PHOTOS = {
+  qatour: "/farm-photos/site-qatour.jpg",
+  sayari: "/farm-photos/site-sayari.jpg",
+  elwad: "/farm-photos/site-elwad.jpg",
+  taha: "/farm-photos/site-taha.jpg",
+};
 
 function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettings }) {
   const alerts = getFarmAlerts(data);
@@ -3570,6 +3577,12 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
 
   return (
     <div>
+      <div style={{
+        height: 110, borderRadius: 16, marginBottom: 14, position: "relative", overflow: "hidden",
+        backgroundImage: "url(/farm-photos/hero.jpg)", backgroundSize: "cover", backgroundPosition: "center 30%",
+      }}>
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 5, background: `linear-gradient(90deg, ${C.accent}, ${C.green})` }} />
+      </div>
       <div className="pg-title">🏠 لوحة التحكم</div>
       <div className="pg-sub">اختر موقعاً للبدء</div>
 
@@ -3629,8 +3642,9 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
             <div style={{ display: "flex", gap: 9, alignItems: "flex-start", flexDirection: "row-reverse" }}>
               <div style={{
                 width: 48, height: 48, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19,
-                background: `repeating-linear-gradient(45deg, rgba(${hexToRgb(theme.accent)},.14) 0px, rgba(${hexToRgb(theme.accent)},.14) 5px, transparent 5px, transparent 11px), linear-gradient(135deg, ${theme.g1}, ${theme.g2})`,
-              }}>{theme.icon}</div>
+                backgroundImage: SITE_PHOTOS[site.id] ? `url(${SITE_PHOTOS[site.id]})` : `repeating-linear-gradient(45deg, rgba(${hexToRgb(theme.accent)},.14) 0px, rgba(${hexToRgb(theme.accent)},.14) 5px, transparent 5px, transparent 11px), linear-gradient(135deg, ${theme.g1}, ${theme.g2})`,
+                backgroundSize: "cover", backgroundPosition: "center",
+              }}>{!SITE_PHOTOS[site.id] && theme.icon}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 5, flexWrap: "wrap", flexDirection: "row-reverse" }}>
                   <div style={{ fontWeight: 900, fontSize: 12 }}>{site.name}</div>
