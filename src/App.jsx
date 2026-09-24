@@ -2494,23 +2494,19 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
       <div className="pg-sub">اضغط على دورة لعرض العنابر</div>
       {groupList.length === 0 ? (
         <div className="empty"><div className="ico">📭</div><p>لا توجد دورات مؤرشفة في هذا الموقع</p></div>
-      ) : groupList.map((g, gi) => {
-        const tm = g.items.reduce((x, s) => x + (s.dailyRecords || []).reduce((y, r) => y + calcDayStats(r).mortality, 0), 0);
-        const tf = g.items.reduce((x, s) => x + (s.dailyRecords || []).reduce((y, r) => y + calcDayStats(r).feed, 0), 0);
-        const tb = g.items.reduce((x, s) => x + num(s.birdCount), 0);
-        return (
-          <div key={gi} onClick={() => setSelectedGroup(g.key)}
-            style={{ background: C.card, borderRadius: 10, padding: 14, marginBottom: 10, border: `1px solid ${C.border}`, cursor: "pointer", transition: "all .2s" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-              <div>
-                <div style={{ fontWeight: 700, marginBottom: 3, fontSize: 13 }}>📦 دورة {g.items.length > 1 ? `(${g.items.length} عنابر)` : `— ${g.items[0].barnName}`}</div>
-                <div style={{ fontSize: 11, color: C.muted }}>بداية: {g.startDate} | نهاية: {g.endDate || "-"} | طيور: {tb.toLocaleString()} | نافق: {tm} | علف: {tf} كجم</div>
-              </div>
-              <span className="badge by">منتهية</span>
-            </div>
-          </div>
+      ) : (() => {
+        // ترقيم الدورات بالتسلسل الزمني (الأقدم = دورة 1) — يُحسب مرة واحدة بدل ما يتكرر لكل كارت
+        const cycleNumbers = new Map(
+          [...groupList].sort((a, b) => (a.startDate || "").localeCompare(b.startDate || "")).map((g, i) => [g.key, i + 1])
         );
-      })}
+        return groupList.map((g, gi) => (
+          <div key={gi} onClick={() => setSelectedGroup(g.key)}
+            style={{ background: C.card, borderRadius: 12, padding: 18, marginBottom: 10, border: `1px solid ${C.border}`, cursor: "pointer", transition: "all .2s", textAlign: "center" }}>
+            <div style={{ fontWeight: 900, fontSize: 22, color: C.accentD, marginBottom: 6 }}>📅 {g.startDate}</div>
+            <span className="badge by" style={{ fontSize: 12 }}>الدورة رقم {cycleNumbers.get(g.key)}</span>
+          </div>
+        ));
+      })()}
     </div>
   );
 }
