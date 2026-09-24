@@ -3834,6 +3834,23 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState("");
   const [notifStatus, setNotifStatus] = useState("default");
+  const [connOk, setConnOk] = useState(null); // null=لسه بيتأكد, true=متصل, false=مقطوع
+
+  // فحص دوري للاتصال بـ Supabase (كل 20 ثانية) + متابعة حالة النت في الجهاز
+  useEffect(() => {
+    const ping = async () => {
+      if (!navigator.onLine) { setConnOk(false); return; }
+      try {
+        const r = await fetch(`${SUPA_URL}/rest/v1/`, { headers: SUPA_HDR, cache: "no-store" });
+        setConnOk(r.ok || r.status === 404);
+      } catch { setConnOk(false); }
+    };
+    ping();
+    const iv = setInterval(ping, 20000);
+    window.addEventListener("online", ping);
+    window.addEventListener("offline", () => setConnOk(false));
+    return () => { clearInterval(iv); window.removeEventListener("online", ping); };
+  }, []);
 
   useEffect(() => {
     loadSaved().then(d => { if (d) setData(d); setLoading(false); }).catch(() => setLoading(false));
@@ -3854,7 +3871,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser || loading) return;
     setSyncStatus("saving");
-    saveData(data).then(() => { setSyncStatus("saved"); setTimeout(() => setSyncStatus(""), 3000); }).catch(() => setSyncStatus("error"));
+    saveData(data).then(() => { setSyncStatus("saved"); setConnOk(true); setTimeout(() => setSyncStatus(""), 3000); }).catch(() => { setSyncStatus("error"); setConnOk(false); });
   }, [data]);
 
   const handleLogin = async (user) => {
@@ -3991,6 +4008,15 @@ export default function App() {
             <img src="/logo.png" alt="logo" style={{ width: 42, height: 42, objectFit: "contain", borderRadius: 6 }} onError={e => { e.target.style.display='none'; }} />
             <div><div>مزارع أبوشريف</div><div className="logo-sub">MAZARIE ABO SHERIF</div></div>
           </div>
+          <span
+            title={connOk === false ? "مفصول عن قاعدة البيانات" : connOk ? "متصل بقاعدة البيانات" : "جاري التحقق من الاتصال..."}
+            style={{
+              width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+              background: connOk === false ? C.red : connOk ? C.green : C.muted,
+              boxShadow: connOk === false ? `0 0 6px ${C.red}` : connOk ? `0 0 6px ${C.green}` : "none",
+              transition: "background .3s",
+            }}
+          />
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {syncStatus === "saving" && <span style={{ fontSize: 10, color: C.accent, background: `rgba(${hexToRgb(C.accent)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>⏳ جاري الحفظ</span>}
