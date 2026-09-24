@@ -3841,8 +3841,9 @@ export default function App() {
     const ping = async () => {
       if (!navigator.onLine) { setConnOk(false); return; }
       try {
-        const r = await fetch(`${SUPA_URL}/rest/v1/`, { headers: SUPA_HDR, cache: "no-store" });
-        setConnOk(r.ok || r.status === 404);
+        await fetch(`${SUPA_URL}/rest/v1/farm_data?select=id&limit=1`, { headers: SUPA_HDR, cache: "no-store" });
+        // أي رد من السيرفر (حتى لو كود خطأ) معناه إن الاتصال بقاعدة البيانات شغال؛ الفشل الحقيقي بيظهر في catch (تعطل الشبكة تمامًا)
+        setConnOk(true);
       } catch { setConnOk(false); }
     };
     ping();
@@ -4008,6 +4009,11 @@ export default function App() {
             <img src="/logo.png" alt="logo" style={{ width: 42, height: 42, objectFit: "contain", borderRadius: 6 }} onError={e => { e.target.style.display='none'; }} />
             <div><div>مزارع أبوشريف</div><div className="logo-sub">MAZARIE ABO SHERIF</div></div>
           </div>
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {syncStatus === "saving" && <span style={{ fontSize: 10, color: C.accent, background: `rgba(${hexToRgb(C.accent)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>⏳ جاري الحفظ</span>}
+          {syncStatus === "saved" && <span style={{ fontSize: 10, color: C.green, background: `rgba(${hexToRgb(C.green)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>✅ محفوظ</span>}
+          {syncStatus === "error" && <span style={{ fontSize: 10, color: C.red, background: `rgba(${hexToRgb(C.red)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>❌ خطأ في الحفظ</span>}
           <span
             title={connOk === false ? "مفصول عن قاعدة البيانات" : connOk ? "متصل بقاعدة البيانات" : "جاري التحقق من الاتصال..."}
             style={{
@@ -4017,11 +4023,6 @@ export default function App() {
               transition: "background .3s",
             }}
           />
-        </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {syncStatus === "saving" && <span style={{ fontSize: 10, color: C.accent, background: `rgba(${hexToRgb(C.accent)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>⏳ جاري الحفظ</span>}
-          {syncStatus === "saved" && <span style={{ fontSize: 10, color: C.green, background: `rgba(${hexToRgb(C.green)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>✅ محفوظ</span>}
-          {syncStatus === "error" && <span style={{ fontSize: 10, color: C.red, background: `rgba(${hexToRgb(C.red)},.1)`, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>❌ خطأ في الحفظ</span>}
           <button className="btn btn-n btn-sm" onClick={goHome}>🏠</button>
         </div>
       </div>
