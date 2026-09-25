@@ -103,11 +103,11 @@ const getFarmAlerts = (data) => {
       const last = recs[recs.length - 1];
       const lastStats = calcDayStats(last);
 
-      // 1) إنذار ارتفاع نسبة النافق في يوم واحد عن 1% من إجمالي طيور العنبر
+      // 1) إنذار لو نافق اليوم (آخر تسجيل) تعدى 1 في الألف (0.1%) من إجمالي طيور العنبر
       if (birdCount > 0) {
         const dayMortRate = (lastStats.mortality / birdCount) * 100;
-        if (dayMortRate > 1) {
-          alerts.push({ siteName: site.name, siteId: site.id, barn, type: "mortality", message: `نسبة النافق في ${last.date} وصلت ${dayMortRate.toFixed(2)}% (${lastStats.mortality} طائر) — تعدت حد الـ 1% من إجمالي طيور العنبر` });
+        if (dayMortRate > 0.1) {
+          alerts.push({ siteName: site.name, siteId: site.id, barn, type: "mortality", message: `نافق يوم ${last.date} كان ${lastStats.mortality} طائر — بمعدل ${dayMortRate.toFixed(2)}% (تعدى حد 1 في الألف من إجمالي طيور العنبر)` });
         }
       }
 
@@ -1967,7 +1967,7 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
 
     // إشعار Push فوري لو السجل ده يمثل إنذار (نافق مرتفع أو انخفاض علف) — بنفس معايير getFarmAlerts
     const updatedSession = d.sites[siteId].sessions[barnName];
-    const alertsForThisBarn = getFarmAlerts(d).filter(a => a.siteName === siteNameForMsg && a.barn === barnName);
+    const alertsForThisBarn = getFarmAlerts(d).filter(a => a.siteId === siteId && a.barn === barnName);
     alertsForThisBarn.forEach(a => {
       notifyAll(a.type === "mortality" ? "🚨 إنذار ارتفاع نافق" : "⚠️ إنذار انخفاض علف", `${siteNameForMsg} — ${barnName}: ${a.message}`);
     });
