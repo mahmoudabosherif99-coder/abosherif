@@ -107,7 +107,7 @@ const getFarmAlerts = (data) => {
       if (birdCount > 0) {
         const dayMortRate = (lastStats.mortality / birdCount) * 100;
         if (dayMortRate > 1) {
-          alerts.push({ siteName: site.name, barn, type: "mortality", message: `نسبة النافق في ${last.date} وصلت ${dayMortRate.toFixed(2)}% (${lastStats.mortality} طائر) — تعدت حد الـ 1% من إجمالي طيور العنبر` });
+          alerts.push({ siteName: site.name, siteId: site.id, barn, type: "mortality", message: `نسبة النافق في ${last.date} وصلت ${dayMortRate.toFixed(2)}% (${lastStats.mortality} طائر) — تعدت حد الـ 1% من إجمالي طيور العنبر` });
         }
       }
 
@@ -117,7 +117,7 @@ const getFarmAlerts = (data) => {
         const avgPrev3 = prev3.reduce((s, r) => s + calcDayStats(r).feed, 0) / prev3.length;
         if (avgPrev3 > 0 && lastStats.feed < avgPrev3) {
           const dropPct = (((avgPrev3 - lastStats.feed) / avgPrev3) * 100).toFixed(0);
-          alerts.push({ siteName: site.name, barn, type: "feed", message: `العلف في ${last.date} (${lastStats.feed.toFixed(0)} كجم) أقل من متوسط آخر 3 أيام (${avgPrev3.toFixed(0)} كجم) بنسبة ${dropPct}%` });
+          alerts.push({ siteName: site.name, siteId: site.id, barn, type: "feed", message: `العلف في ${last.date} (${lastStats.feed.toFixed(0)} كجم) أقل من متوسط آخر 3 أيام (${avgPrev3.toFixed(0)} كجم) بنسبة ${dropPct}%` });
         }
       }
     });
@@ -379,6 +379,7 @@ input,select,textarea{font-family:'Cairo',sans-serif;direction:rtl}
 .btn-s{background:${C.green};color:#fff;box-shadow:0 2px 8px rgba(${hexToRgb(C.green)},.28)}.btn-s:hover{filter:brightness(1.12)}
 .btn-d{background:${C.red};color:#fff}.btn-d:hover{filter:brightness(1.12)}
 .btn-n{background:${C.cardAlt};color:${C.text};border:1px solid ${C.border}}.btn-n:hover{border-color:${C.accent};color:${C.accentD}}
+.btn-back{background:${C.green};color:#fff;border:none;box-shadow:0 2px 8px rgba(${hexToRgb(C.green)},.3)}.btn-back:hover{filter:brightness(1.1)}
 .btn-w{background:rgba(${hexToRgb(C.orange)},.13);color:${C.orange};border:1px solid rgba(${hexToRgb(C.orange)},.4)}
 .btn-sm{padding:5px 11px;font-size:11px}
 .btn-xs{padding:3px 8px;font-size:11px}
@@ -1289,7 +1290,7 @@ function SiteStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack })
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2, flexWrap: "wrap" }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>🌾 مخزن علف {site.name}</div>
         <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة تقرير</button>
       </div>
@@ -1534,7 +1535,7 @@ function MedStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2, flexWrap: "wrap" }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>💊 مخزن دواء {site.name}</div>
         <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة تقرير</button>
       </div>
@@ -1886,7 +1887,7 @@ function StartSession({ barnName, siteName, onStart, onBack }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>🐔 {barnName}</div>
       </div>
       <div className="pg-sub">{siteName}</div>
@@ -1963,6 +1964,13 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
     const siteNameForMsg = SITES.find(s => s.id === siteId)?.name || siteId;
     const msg = `📋 تسجيل يومي جديد\nالموقع: ${siteNameForMsg}\nالعنبر: ${barnName}\nالتاريخ: ${record.date}\nالنافق (ليل/نهار): ${num(record.night.mortality)} / ${num(record.day.mortality)}\nالعلف (ليل/نهار): ${num(record.night.feed)} / ${num(record.day.feed)} كجم`;
     fetch("/api/send-whatsapp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: msg }) }).catch(() => {});
+
+    // إشعار Push فوري لو السجل ده يمثل إنذار (نافق مرتفع أو انخفاض علف) — بنفس معايير getFarmAlerts
+    const updatedSession = d.sites[siteId].sessions[barnName];
+    const alertsForThisBarn = getFarmAlerts(d).filter(a => a.siteName === siteNameForMsg && a.barn === barnName);
+    alertsForThisBarn.forEach(a => {
+      notifyAll(a.type === "mortality" ? "🚨 إنذار ارتفاع نافق" : "⚠️ إنذار انخفاض علف", `${siteNameForMsg} — ${barnName}: ${a.message}`);
+    });
 
     return { ok: true };
   };
@@ -2049,7 +2057,7 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
       {showReport && <PrintReport session={session} siteName={siteName} barnName={barnName} currentUser={currentUser} onClose={() => setShowReport(false)} />}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>🐔 {barnName}</div>
         <div className="pg-sub" style={{ margin: "0 0 0 4px" }}>{siteName}</div>
       </div>
@@ -2208,7 +2216,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
         {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
         {showReport && <PrintReport session={s} siteName={s.siteName} barnName={s.barnName} currentUser={currentUser} onClose={() => setShowReport(false)} />}
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-          <button className="btn btn-n btn-sm" onClick={() => setSelectedArchive(null)}>← رجوع</button>
+          <button className="btn btn-back btn-sm" onClick={() => setSelectedArchive(null)}>← رجوع</button>
           <div className="pg-title" style={{ margin: 0 }}>📦 {s.barnName} — {s.siteName}</div>
           <div style={{ marginRight: "auto", display: "flex", gap: 6 }}>
             <button className="btn btn-n btn-sm" onClick={() => setShowReport(true)}>🖨️ تقرير الدورة الكامل</button>
@@ -2289,7 +2297,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
     const injSnap = mergeById(...g.items.map(s => s.injectionsSnapshot || []));
 
     if (groupView) {
-      const backBtn = <button className="btn btn-n btn-sm" onClick={() => setGroupView(null)}>← رجوع لعناصر الدورة</button>;
+      const backBtn = <button className="btn btn-back btn-sm" onClick={() => setGroupView(null)}>← رجوع لعناصر الدورة</button>;
       if (groupView === "feed") {
         const totalIn = feedSnap.received.reduce((s, r) => s + num(r.qty), 0);
         const totalOut = feedSnap.dispatched.reduce((s, r) => s + num(r.qty), 0);
@@ -2440,7 +2448,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
       <div>
         {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-          <button className="btn btn-n btn-sm" onClick={() => { setSelectedGroup(null); setGroupView(null); }}>← رجوع</button>
+          <button className="btn btn-back btn-sm" onClick={() => { setSelectedGroup(null); setGroupView(null); }}>← رجوع</button>
           <div className="pg-title" style={{ margin: 0 }}>📦 دورة {site.name}</div>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
@@ -2485,7 +2493,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
     <div>
       {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>📦 أرشيف {site.name}</div>
         {isAdmin && oldArchivesCount > 0 && (
           <button className="btn btn-w btn-sm" style={{ marginRight: "auto" }} onClick={migrateOldArchives}>🔄 تحديث {oldArchivesCount} دورة قديمة (إضافة أرشفة المخازن)</button>
@@ -3057,7 +3065,7 @@ function GasStorePage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }) 
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2, flexWrap: "wrap" }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>🔥 خزان جاز {site.name}</div>
         <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة تقرير</button>
       </div>
@@ -3239,7 +3247,7 @@ function InjectionsPage({ siteId, data, onUpdate, isAdmin, currentUser, onBack }
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2, flexWrap: "wrap" }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>💉 حقن وتقطير {site.name}</div>
         {rows.length > 0 && <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة تقرير</button>}
       </div>
@@ -3401,7 +3409,7 @@ function SiteReportsPage({ siteId, data, onBack, currentUser }) {
         />
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>📊 تقارير {site.name}</div>
         <button className="btn btn-n btn-sm" style={{ marginRight: "auto" }} onClick={() => setShowReport(true)}>🖨️ طباعة</button>
       </div>
@@ -3477,7 +3485,7 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
     return sum + (num(ses.birdCount) - tm);
   }, 0);
   const totalBirdsStart = activeBarns.reduce((sum, b) => sum + num(siteData.sessions[b].birdCount), 0);
-  const siteAlerts = getFarmAlerts(data).filter(a => a.siteName === site.name);
+  const siteAlerts = getFarmAlerts(data).filter(a => a.siteId === siteId);
 
   if (showReportsPage) return <SiteReportsPage siteId={siteId} data={data} onBack={() => setShowReportsPage(false)} currentUser={currentUser} />;
 
@@ -3487,16 +3495,17 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
       {showReport && <SiteReport siteId={siteId} data={data} currentUser={currentUser} onClose={() => setShowReport(false)} />}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "9px 12px", marginBottom: 14 }}>
-        <button className="btn btn-n btn-xs" style={{ background: C.green, color: "#fff", border: "none" }} onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-xs" onClick={onBack}>← رجوع</button>
         <div style={{ fontSize: 14, fontWeight: 900, display: "flex", alignItems: "center", gap: 6 }}>{site.name} 🏚️</div>
       </div>
 
       {siteAlerts.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           {siteAlerts.map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 7, padding: "6px 10px", marginBottom: 5, fontSize: 10 }}>
+            <div key={i} onClick={() => onSelectBarn(siteId, a.barn)} style={{ display: "flex", alignItems: "center", gap: 6, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 7, padding: "6px 10px", marginBottom: 5, fontSize: 10, cursor: "pointer" }}>
               <span style={{ fontSize: 13 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
-              <span><strong>{a.barn}:</strong> {a.message}</span>
+              <span style={{ flex: 1 }}><strong>{a.barn}:</strong> {a.message}</span>
+              <span style={{ fontSize: 12, color: C.muted }}>‹</span>
             </div>
           ))}
         </div>
@@ -3622,10 +3631,10 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
 
       {/* شريط الإحصائيات */}
       <div style={{ display: "flex", gap: 7, marginBottom: 12, flexWrap: "wrap" }}>
-        <div onClick={() => setShowAlertsList(v => !v)} style={{ flex: "1 1 90px", cursor: alerts.length ? "pointer" : "default", background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "9px 7px", textAlign: "center" }}>
+        <div onClick={() => alerts.length && setShowAlertsList(v => !v)} style={{ flex: "1 1 90px", cursor: alerts.length ? "pointer" : "default", background: C.card, border: `1px solid ${alerts.length ? C.red : C.border}`, borderRadius: 11, padding: "9px 7px", textAlign: "center", position: "relative" }}>
           <div style={{ fontSize: 15 }}>🔔</div>
           <div style={{ fontSize: 15, fontWeight: 900, color: alerts.length ? C.red : C.text }}>{alerts.length}</div>
-          <div style={{ fontSize: 9, color: C.muted }}>تنبيهات</div>
+          <div style={{ fontSize: 9, color: C.muted }}>تنبيهات {alerts.length > 0 && (showAlertsList ? "▲" : "▼")}</div>
         </div>
         <div style={{ flex: "1 1 90px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: "9px 7px", textAlign: "center" }}>
           <div style={{ fontSize: 15 }}>🏚️</div>
@@ -3642,9 +3651,10 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
       {showAlertsList && alerts.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           {alerts.map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 7, padding: "6px 10px", marginBottom: 5, fontSize: 10 }}>
+            <div key={i} onClick={() => onSelectBarn(a.siteId, a.barn)} style={{ display: "flex", alignItems: "center", gap: 6, background: a.type === "mortality" ? "rgba(200,60,60,.1)" : "rgba(220,150,30,.12)", border: `1px solid ${a.type === "mortality" ? C.red : C.orange}`, borderRadius: 7, padding: "6px 10px", marginBottom: 5, fontSize: 10, cursor: "pointer" }}>
               <span style={{ fontSize: 13 }}>{a.type === "mortality" ? "🚨" : "⚠️"}</span>
-              <span><strong>{a.siteName} — {a.barn}:</strong> {a.message}</span>
+              <span style={{ flex: 1 }}><strong>{a.siteName} — {a.barn}:</strong> {a.message}</span>
+              <span style={{ fontSize: 12, color: C.muted }}>‹</span>
             </div>
           ))}
         </div>
@@ -3670,7 +3680,7 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
           <div key={site.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 9, marginBottom: 10, boxShadow: "0 1px 6px rgba(0,0,0,.05)" }}>
             <div style={{ display: "flex", gap: 9, alignItems: "flex-start", flexDirection: "row-reverse" }}>
               <div style={{
-                width: 48, height: 48, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19,
+                width: 88, height: 88, borderRadius: 14, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32,
                 backgroundImage: SITE_PHOTOS[site.id] ? `url(${SITE_PHOTOS[site.id]})` : `repeating-linear-gradient(45deg, rgba(${hexToRgb(theme.accent)},.14) 0px, rgba(${hexToRgb(theme.accent)},.14) 5px, transparent 5px, transparent 11px), linear-gradient(135deg, ${theme.g1}, ${theme.g2})`,
                 backgroundSize: "cover", backgroundPosition: "center",
               }}>{!SITE_PHOTOS[site.id] && theme.icon}</div>
@@ -3777,7 +3787,7 @@ function AiChatPage({ data, onBack }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 140px)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <button className="btn btn-n btn-sm" onClick={onBack}>← رجوع</button>
+        <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
         <div className="pg-title" style={{ margin: 0 }}>🤖 المساعد الذكي</div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: "4px 2px" }}>
