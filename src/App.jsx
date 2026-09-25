@@ -3692,7 +3692,7 @@ function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettin
                 <div style={{ fontSize: 9, color: C.muted, margin: "3px 0 6px", textAlign: "left" }}>{site.barns.length} عنابر | {active} دورات نشطة</div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", position: "relative", flexDirection: "row-reverse" }}>
                   <div onClick={() => setOpenBarnPicker(isPickerOpen ? null : site.id)} style={{ display: "flex", alignItems: "center", gap: 5, background: C.cardAlt, borderRadius: 8, padding: "5px 8px", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
-                    🏚️ أعنبر <span style={{ fontSize: 9 }}>{isPickerOpen ? "▲" : "▼"}</span>
+                    🏚️ عنبر <span style={{ fontSize: 9 }}>{isPickerOpen ? "▲" : "▼"}</span>
                   </div>
                   <button className="btn btn-p btn-xs" style={{ flex: 1, background: C.green, border: "none" }} onClick={() => onSelectSite(site.id)}>← دخول المزرعة</button>
                 </div>
