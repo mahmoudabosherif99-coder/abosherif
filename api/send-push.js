@@ -30,6 +30,7 @@ export default async function handler(req, res) {
   const title = (payload.title || "🔔 مزارع أبوشريف").slice(0, 120);
   const body = (payload.body || "").slice(0, 200);
   const excludeUserId = payload.excludeUserId || null;
+  const onlyBarn = payload.onlyBarn && payload.onlyBarn.siteId && payload.onlyBarn.barn ? payload.onlyBarn : null;
 
   let subs = [];
   try {
@@ -41,6 +42,26 @@ export default async function handler(req, res) {
   }
 
   if (excludeUserId) subs = subs.filter((s) => s.user_id !== excludeUserId);
+
+  // لو الإشعار خاص بعنبر معين، نقيّد الإرسال على المستخدمين المصرّح لهم بمشاهدة العنبر ده بس
+  if (onlyBarn) {
+    try {
+      const ur = await fetch(`${SUPA_URL}/rest/v1/users?select=id,role,allowed_sites,allowed_barns`, { headers: supaHeaders });
+      const users = await ur.json();
+      const canSeeBarn = (user) => {
+        if (!user) return false;
+        if (user.role === "admin") return true;
+        const ab = user.allowed_barns || {};
+        if (Array.isArray(ab[onlyBarn.siteId]) && ab[onlyBarn.siteId].length > 0) return ab[onlyBarn.siteId].includes(onlyBarn.barn);
+        const allowedSites = user.allowed_sites || [];
+        return allowedSites.length === 0 || allowedSites.includes(onlyBarn.siteId);
+      };
+      const allowedUserIds = new Set((Array.isArray(users) ? users : []).filter(canSeeBarn).map((u) => u.id));
+      subs = subs.filter((s) => allowedUserIds.has(s.user_id));
+    } catch {
+      // لو فشل جلب المستخدمين لأي سبب، منمنعش الإشعار كله؛ نبعته زي ما هو من غير تحصيص إضافي
+    }
+  }
 
   const notifPayload = JSON.stringify({ title, body });
 

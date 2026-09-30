@@ -8,6 +8,9 @@ const SITES = [
   { id: "taha", name: "عنبر طه", barns: ["عنبر 1", "عنبر 2", "عنبر 3", "عنبر 4"] },
 ];
 
+// سلالات الدواجن الثابتة المتاحة عند بدء الدورة
+const BREEDS = ["اربو", "كب", "هابرد", "اڤين", "روص", "IR"];
+
 const SUPA_URL = "https://devxozrfoxvypllmhijj.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRldnhvenJmb3h2eXBsbG1oaWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTA1NzgsImV4cCI6MjA5Njc4NjU3OH0.JnYQyOnYf501SjkNtMBp1GGyLhtQQ8gAY6ElXnjrVRk";
 const SUPA_HDR = { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
@@ -89,6 +92,17 @@ const calcFCR = (totalFeed, avgWeightG, birds) => {
 
 // ========== ALERTS ==========
 // يفحص كل المواقع والعنابر النشطة ويطلع إنذارات: ارتفاع نسبة النافق اليومي، أو انخفاض العلف عن متوسط آخر 3 أيام
+// يفحص هل المستخدم مسموح له بمشاهدة عنبر معين (تحصيص أدق من allowed_sites)
+// لو allowed_barns فيها تحديد لموقع معين، بيتقيد بيه؛ لو مفيش تحديد، بيرجع لصلاحية الموقع كاملة (توافق مع الإعداد القديم)
+const userCanSeeBarn = (user, siteId, barn) => {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  const ab = user.allowed_barns || {};
+  if (Array.isArray(ab[siteId]) && ab[siteId].length > 0) return ab[siteId].includes(barn);
+  const allowedSites = user.allowed_sites || [];
+  return allowedSites.length === 0 || allowedSites.includes(siteId);
+};
+
 const getFarmAlerts = (data) => {
   const alerts = [];
   SITES.forEach(site => {
@@ -265,12 +279,12 @@ const disablePush = async () => {
 };
 
 // يبعث إشعار لكل المستخدمين اللي مفعّلين الإشعارات (غير اللي بعت هو نفسه، اختياري)
-const notifyAll = async (title, body, excludeUserId) => {
+const notifyAll = async (title, body, excludeUserId, onlyBarn) => {
   try {
     await fetch("/api/send-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, body, excludeUserId }),
+      body: JSON.stringify({ title, body, excludeUserId, onlyBarn }),
     });
   } catch {}
 };
@@ -1153,6 +1167,12 @@ function SummaryTab({ session }) {
   return (
     <div className="card">
       <div className="card-t">📊 ملخص الدورة</div>
+      {(session.breed || session.receiveWeight) && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          {session.breed && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>🧬 السلالة: <strong>{session.breed}</strong></div>}
+          {session.receiveWeight && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>⚖️ وزن الاستلام: <strong>{session.receiveWeight} جم</strong></div>}
+        </div>
+      )}
       <div className="stats">
         <div className="stat"><div className="sv cy">{age}</div><div className="sl">عمر الدورة (يوم)</div></div>
         <div className="stat"><div className="sv cg">{remaining.toLocaleString()}</div><div className="sl">الطيور الحالية</div></div>
@@ -1818,6 +1838,8 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
           {lastW && <div className="a4box"><div className="v">{lastW.avgWeight} جم</div><div className="l">آخر متوسط وزن</div></div>}
           <div className="a4box"><div className="v">{fcr}</div><div className="l">FCR</div></div>
           <div className="a4box"><div className="v">{age} يوم</div><div className="l">عمر الدورة</div></div>
+          {session.breed && <div className="a4box"><div className="v" style={{ fontSize: 15 }}>{session.breed}</div><div className="l">السلالة</div></div>}
+          {session.receiveWeight && <div className="a4box"><div className="v">{session.receiveWeight} جم</div><div className="l">وزن الاستلام</div></div>}
         </div>
 
         {(session.dailyRecords || []).length > 0 && (
@@ -1884,6 +1906,8 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
 function StartSession({ barnName, siteName, onStart, onBack }) {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [birds, setBirds] = useState("");
+  const [breed, setBreed] = useState("");
+  const [receiveWeight, setReceiveWeight] = useState("");
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -1901,7 +1925,16 @@ function StartSession({ barnName, siteName, onStart, onBack }) {
               <div className="fg"><label className="lbl">تاريخ البداية</label><input className="inp" type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
               <div className="fg"><label className="lbl">عدد الطيور</label><input className="inp" type="number" placeholder="25000" value={birds} onChange={e => setBirds(e.target.value)} /></div>
             </div>
-            <button className="btn btn-s" onClick={() => { if (date && birds) onStart(date, birds); }}>✅ بدء الدورة</button>
+            <div className="g2" style={{ marginBottom: 12 }}>
+              <div className="fg"><label className="lbl">نوع السلالة</label>
+                <select className="inp" value={breed} onChange={e => setBreed(e.target.value)}>
+                  <option value="">اختر السلالة</option>
+                  {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div className="fg"><label className="lbl">وزن الاستلام (جم)</label><input className="inp" type="number" placeholder="مثال: 42" value={receiveWeight} onChange={e => setReceiveWeight(e.target.value)} /></div>
+            </div>
+            <button className="btn btn-s" onClick={() => { if (date && birds) onStart(date, birds, breed, receiveWeight); }}>✅ بدء الدورة</button>
           </div>
         ) : (
           <p style={{ color: C.muted, fontSize: 13 }}>ليس لديك صلاحية بدء دورة جديدة</p>
@@ -1930,9 +1963,9 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
     onUpdate(d);
   };
 
-  const startSession = (date, birds) => {
+  const startSession = (date, birds, breed, receiveWeight) => {
     const s = emptySession(barnName);
-    s.startDate = date; s.birdCount = birds;
+    s.startDate = date; s.birdCount = birds; s.breed = breed || ""; s.receiveWeight = receiveWeight || "";
     deepUpdateSession(s);
   };
 
@@ -1969,7 +2002,7 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
     const updatedSession = d.sites[siteId].sessions[barnName];
     const alertsForThisBarn = getFarmAlerts(d).filter(a => a.siteId === siteId && a.barn === barnName);
     alertsForThisBarn.forEach(a => {
-      notifyAll(a.type === "mortality" ? "🚨 إنذار ارتفاع نافق" : "⚠️ إنذار انخفاض علف", `${siteNameForMsg} — ${barnName}: ${a.message}`);
+      notifyAll(a.type === "mortality" ? "🚨 إنذار ارتفاع نافق" : "⚠️ إنذار انخفاض علف", `${siteNameForMsg} — ${barnName}: ${a.message}`, null, { siteId, barn: barnName });
     });
 
     return { ok: true };
@@ -2534,7 +2567,7 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus,
   const [users, setUsers] = useState([]);
   const [loadingU, setLoadingU] = useState(false);
   const [editUser, setEditUser] = useState(null);
-  const [newUser, setNewUser] = useState({ username: "", password: "", role: "viewer", can_edit: false, allowed_sites: [] });
+  const [newUser, setNewUser] = useState({ username: "", password: "", role: "viewer", can_edit: false, allowed_sites: [], allowed_barns: {} });
   const [showNew, setShowNew] = useState(false);
   const [uMsg, setUMsg] = useState("");
   const [confirm, setConfirm] = useState(null);
@@ -2564,7 +2597,7 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus,
 
   const doSaveUser = async () => {
     if (!editUser?.username || !editUser?.password) return;
-    await updateUser(editUser.id, { username: editUser.username, password: editUser.password, role: editUser.role, can_edit: editUser.can_edit, allowed_sites: editUser.allowed_sites || [] });
+    await updateUser(editUser.id, { username: editUser.username, password: editUser.password, role: editUser.role, can_edit: editUser.can_edit, allowed_sites: editUser.allowed_sites || [], allowed_barns: editUser.allowed_barns || {} });
     setEditUser(null); setUMsg("✅ تم الحفظ"); setTimeout(() => setUMsg(""), 2000);
     fetchUsers().then(u => setUsers(Array.isArray(u) ? u : []));
   };
@@ -2572,7 +2605,7 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus,
   const doCreateUser = async () => {
     if (!newUser.username || !newUser.password) return;
     await createUser(newUser);
-    setNewUser({ username: "", password: "", role: "viewer", can_edit: false, allowed_sites: [] });
+    setNewUser({ username: "", password: "", role: "viewer", can_edit: false, allowed_sites: [], allowed_barns: {} });
     setShowNew(false); setUMsg("✅ تم إضافة المستخدم"); setTimeout(() => setUMsg(""), 2000);
     fetchUsers().then(u => setUsers(Array.isArray(u) ? u : []));
   };
@@ -2580,6 +2613,13 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus,
   const toggleSite = (u, setU, siteId) => {
     const sites = u.allowed_sites || [];
     setU(p => ({ ...p, allowed_sites: sites.includes(siteId) ? sites.filter(s => s !== siteId) : [...sites, siteId] }));
+  };
+
+  const toggleBarn = (u, setU, siteId, barn) => {
+    const ab = { ...(u.allowed_barns || {}) };
+    const current = ab[siteId] || [];
+    ab[siteId] = current.includes(barn) ? current.filter(b => b !== barn) : [...current, barn];
+    setU(p => ({ ...p, allowed_barns: ab }));
   };
 
   const addSite = () => {
@@ -2658,6 +2698,21 @@ function SettingsPage({ currentUser, data, onUpdate, onDataRestore, notifStatus,
               <button key={s.id} className={`btn btn-sm ${(u.allowed_sites || []).includes(s.id) ? "btn-p" : "btn-n"}`} onClick={() => toggleSite(u, setU, s.id)}>{s.name}</button>
             ))}
           </div>
+        </div>
+      )}
+      {u.role !== "admin" && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="lbl" style={{ marginBottom: 6 }}>تحصيص عنابر معينة (اختياري — لو حددت عنبر هنا، التنبيهات والإشعارات هتوصله بس لعنابره المحددة مش كل عنابر الموقع)</div>
+          {(u.allowed_sites && u.allowed_sites.length > 0 ? SITES.filter(s => u.allowed_sites.includes(s.id)) : SITES).map(s => (
+            <div key={s.id} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 3 }}>{s.name}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {s.barns.map(b => (
+                  <button key={b} className={`btn btn-xs ${((u.allowed_barns || {})[s.id] || []).includes(b) ? "btn-p" : "btn-n"}`} onClick={() => toggleBarn(u, setU, s.id, b)}>{b}</button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
       <div style={{ display: "flex", gap: 8 }}>
@@ -3485,7 +3540,7 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
     return sum + (num(ses.birdCount) - tm);
   }, 0);
   const totalBirdsStart = activeBarns.reduce((sum, b) => sum + num(siteData.sessions[b].birdCount), 0);
-  const siteAlerts = getFarmAlerts(data).filter(a => a.siteId === siteId);
+  const siteAlerts = getFarmAlerts(data).filter(a => a.siteId === siteId && userCanSeeBarn(currentUser, a.siteId, a.barn));
 
   if (showReportsPage) return <SiteReportsPage siteId={siteId} data={data} onBack={() => setShowReportsPage(false)} currentUser={currentUser} />;
 
@@ -3596,8 +3651,8 @@ const SITE_PHOTOS = {
   taha: "/farm-photos/site-taha.jpg",
 };
 
-function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettings }) {
-  const alerts = getFarmAlerts(data);
+function HomePage({ data, onSelectSite, onSelectBarn, allowedSites, onOpenSettings, currentUser }) {
+  const alerts = getFarmAlerts(data).filter(a => userCanSeeBarn(currentUser, a.siteId, a.barn));
   const [search, setSearch] = useState("");
   const [sortAlpha, setSortAlpha] = useState(false);
   const [activeOnly, setActiveOnly] = useState(false);
@@ -3986,7 +4041,7 @@ export default function App() {
       if (showInjections && selectedSite) return <InjectionsPage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowInjections(false)} />;
       if (selectedSite && selectedBarn) return <BarnPage siteId={selectedSite} barnName={selectedBarn} data={data} onUpdate={updateData} canEdit={canEdit} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setSelectedBarn(null)} />;
       if (selectedSite && !selectedBarn) return <SitePage siteId={selectedSite} data={data} onSelectBarn={selectBarn} onDeleteSite={isAdmin ? deleteSite : null} onArchiveSite={isAdmin ? archiveSite : null} onBack={goHome} onOpenStore={openStore} onOpenMedStore={openMedStore} onOpenGasStore={openGasStore} onOpenInjections={openInjections} onOpenArchive={openArchive} currentUser={currentUser} />;
-      return <HomePage data={data} onSelectSite={selectSite} onSelectBarn={selectBarn} allowedSites={allowedSites} onOpenSettings={() => { setShowSettings(true); setShowAiChat(false); setShowArchive(false); setSelectedBarn(null); setShowStore(false); }} />;
+      return <HomePage data={data} onSelectSite={selectSite} onSelectBarn={selectBarn} allowedSites={allowedSites} onOpenSettings={() => { setShowSettings(true); setShowAiChat(false); setShowArchive(false); setSelectedBarn(null); setShowStore(false); }} currentUser={currentUser} />;
     } catch (e) {
       return <div className="empty"><div className="ico">⚠️</div><p>حدث خطأ</p><button className="btn btn-p" style={{ marginTop: 12 }} onClick={goHome}>🏠 الرئيسية</button></div>;
     }
