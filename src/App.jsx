@@ -11,6 +11,16 @@ const SITES = [
 // سلالات الدواجن الثابتة المتاحة عند بدء الدورة
 const BREEDS = ["اربو", "كب", "هابرد", "اڤين", "روص", "IR"];
 
+// معامل الوزن المتوقع لسلالة "كب" لكل أسبوع (الوزن المتوقع = وزن الاستلام × المعامل)
+const COBB_WEIGHT_MULTIPLIERS = { 1: 4.8, 2: 13.6, 3: 26.6, 4: 42.5, 5: 60 };
+const cobbExpectedWeight = (ageDays, receiveWeight) => {
+  if (!ageDays || !receiveWeight) return null;
+  const week = Math.ceil(num(ageDays) / 7);
+  const mult = COBB_WEIGHT_MULTIPLIERS[week];
+  if (!mult) return null;
+  return num(receiveWeight) * mult;
+};
+
 const SUPA_URL = "https://devxozrfoxvypllmhijj.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRldnhvenJmb3h2eXBsbG1oaWpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTA1NzgsImV4cCI6MjA5Njc4NjU3OH0.JnYQyOnYf501SjkNtMBp1GGyLhtQQ8gAY6ElXnjrVRk";
 const SUPA_HDR = { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
@@ -781,6 +791,8 @@ function WeightTab({ session, onUpdate, isAdmin }) {
 
   const formFeedToAge = form.age ? feedUpToAge(num(form.age)) : 0;
   const formFcr = form.age && avg ? calcFCR(formFeedToAge, num(avg), remaining) : "-";
+  const isCobb = session.breed === "كب";
+  const formExpected = isCobb ? cobbExpectedWeight(form.age, session.receiveWeight) : null;
 
   const save = () => {
     if (!form.age || !form.sampleCount || !form.totalWeight || !onUpdate) return;
@@ -831,6 +843,12 @@ function WeightTab({ session, onUpdate, isAdmin }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
             <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>📦 إجمالي العلف حتى عمر {form.age} يوم: <strong>{formFeedToAge.toFixed(0)} كجم</strong></div>
             {avg && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>⚖️ FCR المتوقع: <strong style={{ color: num(formFcr) < 2 ? C.green : C.red }}>{formFcr}</strong></div>}
+            {isCobb && formExpected != null && (
+              <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>
+                🎯 الوزن المتوقع (كب): <strong style={{ color: C.purple }}>{formExpected.toFixed(0)} جم</strong>
+                {avg && <span style={{ color: num(avg) >= formExpected ? C.green : C.red, marginRight: 6 }}>({num(avg) >= formExpected ? "✅ أعلى من المتوقع" : "⚠️ أقل من المتوقع"})</span>}
+              </div>
+            )}
           </div>
         )}
         {canEdit && <button className="btn btn-p btn-sm" style={{ marginTop: 10 }} onClick={save}>💾 حفظ</button>}
@@ -840,16 +858,18 @@ function WeightTab({ session, onUpdate, isAdmin }) {
           <div className="card-t">📊 معامل التحويل حسب العمر</div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
-              <thead><tr><th>العمر</th><th>متوسط الوزن</th><th>إجمالي العلف</th><th>FCR</th><th>ملاحظة</th>{canEdit && <th>إجراء</th>}</tr></thead>
+              <thead><tr><th>العمر</th><th>متوسط الوزن</th>{isCobb && <th>الوزن المتوقع</th>}<th>إجمالي العلف</th><th>FCR</th><th>ملاحظة</th>{canEdit && <th>إجراء</th>}</tr></thead>
               <tbody>
                 {session.weeklyWeights.map(w => {
                   const ageDays = ageOf(w);
                   const tf = feedUpToAge(ageDays);
                   const fcr = calcFCR(tf, num(w.avgWeight), remaining);
+                  const expected = isCobb ? cobbExpectedWeight(ageDays, session.receiveWeight) : null;
                   return (
                     <tr key={w.id}>
                       <td>{ageDays} يوم</td>
                       <td style={{ color: C.accent, fontWeight: 700 }}>{w.avgWeight} جم</td>
+                      {isCobb && <td>{expected != null ? <span style={{ color: num(w.avgWeight) >= expected ? C.green : C.red, fontWeight: 700 }}>{expected.toFixed(0)} جم</span> : "-"}</td>}
                       <td>{tf.toFixed(0)} كجم</td>
                       <td><span className="badge" style={{ background: num(fcr) < 2 ? `rgba(${hexToRgb(C.green)},.12)` : `rgba(${hexToRgb(C.red)},.12)`, color: num(fcr) < 2 ? C.green : C.red }}>{fcr}</span></td>
                       <td style={{ fontSize: 11, color: C.muted }}>{w.note || "-"}</td>
@@ -1155,7 +1175,16 @@ function DaySummaryTab({ session, hideFeed }) {
 }
 
 // ========== SUMMARY TAB ==========
-function SummaryTab({ session }) {
+function SummaryTab({ session, onUpdate }) {
+  const canEdit = !!onUpdate;
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ breed: session.breed || "", receiveWeight: session.receiveWeight || "" });
+
+  const saveInfo = () => {
+    onUpdate({ ...session, breed: form.breed, receiveWeight: form.receiveWeight });
+    setEditing(false);
+  };
+
   const totalMort = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).mortality, 0);
   const totalFeed = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).feed, 0);
   const remaining = num(session.birdCount) - totalMort;
@@ -1166,8 +1195,29 @@ function SummaryTab({ session }) {
 
   return (
     <div className="card">
-      <div className="card-t">📊 ملخص الدورة</div>
-      {(session.breed || session.receiveWeight) && (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="card-t">📊 ملخص الدورة</div>
+        {canEdit && !editing && <button className="btn btn-n btn-xs" onClick={() => { setForm({ breed: session.breed || "", receiveWeight: session.receiveWeight || "" }); setEditing(true); }}>✏️ تعديل السلالة/وزن الاستلام</button>}
+      </div>
+      {editing ? (
+        <div className="g2" style={{ marginBottom: 12 }}>
+          <div className="fg">
+            <label className="lbl">نوع السلالة</label>
+            <select className="inp" value={form.breed} onChange={e => setForm(p => ({ ...p, breed: e.target.value }))}>
+              <option value="">اختر السلالة</option>
+              {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <div className="fg">
+            <label className="lbl">وزن الاستلام (جم)</label>
+            <input className="inp" type="number" placeholder="مثال: 42" value={form.receiveWeight} onChange={e => setForm(p => ({ ...p, receiveWeight: e.target.value }))} />
+          </div>
+          <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1" }}>
+            <button className="btn btn-n btn-sm" style={{ flex: 1 }} onClick={() => setEditing(false)}>إلغاء</button>
+            <button className="btn btn-p btn-sm" style={{ flex: 1 }} onClick={saveInfo}>💾 حفظ</button>
+          </div>
+        </div>
+      ) : (session.breed || session.receiveWeight) && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           {session.breed && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>🧬 السلالة: <strong>{session.breed}</strong></div>}
           {session.receiveWeight && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>⚖️ وزن الاستلام: <strong>{session.receiveWeight} جم</strong></div>}
@@ -2163,7 +2213,7 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
       {activeTab === "daily" && <DailyTab session={session} siteId={siteId} onUpdate={canEdit ? deepUpdateSession : null} feedStore={siteData.feedStore} medStore={siteData.medStore} onSaveRecord={canEdit ? saveDailyRecord : null} onEditRecord={canEdit ? editDailyRecord : null} onDeleteRecord={isAdmin ? deleteDailyRecord : null} isAdmin={isAdmin} />}
       {activeTab === "weight" && <WeightTab session={session} onUpdate={canEdit ? deepUpdateSession : null} isAdmin={isAdmin} />}
       {activeTab === "medicine" && <MedicineTab session={session} onEditMed={canEdit ? editMedInRecord : null} onDeleteMed={isAdmin ? deleteMedFromRecord : null} barnName={barnName} siteName={siteName} currentUser={currentUser} />}
-      {activeTab === "summary" && <SummaryTab session={session} />}
+      {activeTab === "summary" && <SummaryTab session={session} onUpdate={canEdit ? deepUpdateSession : null} />}
     </div>
   );
 }
