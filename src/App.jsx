@@ -11,12 +11,16 @@ const SITES = [
 // سلالات الدواجن الثابتة المتاحة عند بدء الدورة
 const BREEDS = ["اربو", "كب", "هابرد", "اڤين", "روص", "IR"];
 
-// معامل الوزن المتوقع لسلالة "كب" لكل أسبوع (الوزن المتوقع = وزن الاستلام × المعامل)
-const COBB_WEIGHT_MULTIPLIERS = { 1: 4.8, 2: 13.6, 3: 26.6, 4: 42.5, 5: 60 };
-const cobbExpectedWeight = (ageDays, receiveWeight) => {
-  if (!ageDays || !receiveWeight) return null;
+// معامل الوزن المتوقع لكل سلالة ولكل أسبوع (الوزن المتوقع = وزن الاستلام × المعامل)
+const BREED_WEIGHT_MULTIPLIERS = {
+  "كب": { 1: 4.8, 2: 13.6, 3: 26.6, 4: 42.5, 5: 60 },
+  "اربو": { 1: 4.75, 2: 12, 3: 22.9, 4: 36.6, 5: 52 },
+};
+const breedExpectedWeight = (breed, ageDays, receiveWeight) => {
+  const table = BREED_WEIGHT_MULTIPLIERS[breed];
+  if (!table || !ageDays || !receiveWeight) return null;
   const week = Math.ceil(num(ageDays) / 7);
-  const mult = COBB_WEIGHT_MULTIPLIERS[week];
+  const mult = table[week];
   if (!mult) return null;
   return num(receiveWeight) * mult;
 };
@@ -126,6 +130,10 @@ const getFarmAlerts = (data) => {
       const birdCount = num(session.birdCount);
       const last = recs[recs.length - 1];
       const lastStats = calcDayStats(last);
+
+      // لو عدى على تاريخ آخر تسجيل أكتر من 24 ساعة، التنبيه يتمسح تلقائي ومنعرضوش تاني
+      const hoursSinceLast = (new Date() - new Date(last.date)) / 3600000;
+      if (hoursSinceLast > 24) return;
 
       // 1) إنذار لو نافق اليوم (آخر تسجيل) تعدى 1 في الألف (0.1%) من إجمالي طيور العنبر
       if (birdCount > 0) {
@@ -770,7 +778,7 @@ function DailyTab({ session, siteId, onUpdate, feedStore, medStore, onSaveRecord
 
 // ========== WEIGHT TAB ==========
 // ========== WEIGHT TAB ==========
-function WeightTab({ session, onUpdate, isAdmin }) {
+function WeightTab({ session, onUpdate, isAdmin, siteBreed, siteReceiveWeight }) {
   const canEdit = !!onUpdate;
   const [form, setForm] = useState({ age: "", sampleCount: "", totalWeight: "", note: "" });
   const [editW, setEditW] = useState(null);
@@ -791,8 +799,8 @@ function WeightTab({ session, onUpdate, isAdmin }) {
 
   const formFeedToAge = form.age ? feedUpToAge(num(form.age)) : 0;
   const formFcr = form.age && avg ? calcFCR(formFeedToAge, num(avg), remaining) : "-";
-  const isCobb = session.breed === "كب";
-  const formExpected = isCobb ? cobbExpectedWeight(form.age, session.receiveWeight) : null;
+  const hasExpectedTable = !!BREED_WEIGHT_MULTIPLIERS[siteBreed];
+  const formExpected = hasExpectedTable ? breedExpectedWeight(siteBreed, form.age, siteReceiveWeight) : null;
 
   const save = () => {
     if (!form.age || !form.sampleCount || !form.totalWeight || !onUpdate) return;
@@ -843,9 +851,9 @@ function WeightTab({ session, onUpdate, isAdmin }) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
             <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>📦 إجمالي العلف حتى عمر {form.age} يوم: <strong>{formFeedToAge.toFixed(0)} كجم</strong></div>
             {avg && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>⚖️ FCR المتوقع: <strong style={{ color: num(formFcr) < 2 ? C.green : C.red }}>{formFcr}</strong></div>}
-            {isCobb && formExpected != null && (
+            {hasExpectedTable && formExpected != null && (
               <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 12px", fontSize: 12 }}>
-                🎯 الوزن المتوقع (كب): <strong style={{ color: C.purple }}>{formExpected.toFixed(0)} جم</strong>
+                🎯 الوزن المتوقع ({siteBreed}): <strong style={{ color: C.purple }}>{formExpected.toFixed(0)} جم</strong>
                 {avg && <span style={{ color: num(avg) >= formExpected ? C.green : C.red, marginRight: 6 }}>({num(avg) >= formExpected ? "✅ أعلى من المتوقع" : "⚠️ أقل من المتوقع"})</span>}
               </div>
             )}
@@ -858,18 +866,18 @@ function WeightTab({ session, onUpdate, isAdmin }) {
           <div className="card-t">📊 معامل التحويل حسب العمر</div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl">
-              <thead><tr><th>العمر</th><th>متوسط الوزن</th>{isCobb && <th>الوزن المتوقع</th>}<th>إجمالي العلف</th><th>FCR</th><th>ملاحظة</th>{canEdit && <th>إجراء</th>}</tr></thead>
+              <thead><tr><th>العمر</th><th>متوسط الوزن</th>{hasExpectedTable && <th>الوزن المتوقع</th>}<th>إجمالي العلف</th><th>FCR</th><th>ملاحظة</th>{canEdit && <th>إجراء</th>}</tr></thead>
               <tbody>
                 {session.weeklyWeights.map(w => {
                   const ageDays = ageOf(w);
                   const tf = feedUpToAge(ageDays);
                   const fcr = calcFCR(tf, num(w.avgWeight), remaining);
-                  const expected = isCobb ? cobbExpectedWeight(ageDays, session.receiveWeight) : null;
+                  const expected = hasExpectedTable ? breedExpectedWeight(siteBreed, ageDays, siteReceiveWeight) : null;
                   return (
                     <tr key={w.id}>
                       <td>{ageDays} يوم</td>
                       <td style={{ color: C.accent, fontWeight: 700 }}>{w.avgWeight} جم</td>
-                      {isCobb && <td>{expected != null ? <span style={{ color: num(w.avgWeight) >= expected ? C.green : C.red, fontWeight: 700 }}>{expected.toFixed(0)} جم</span> : "-"}</td>}
+                      {hasExpectedTable && <td>{expected != null ? <span style={{ color: num(w.avgWeight) >= expected ? C.green : C.red, fontWeight: 700 }}>{expected.toFixed(0)} جم</span> : "-"}</td>}
                       <td>{tf.toFixed(0)} كجم</td>
                       <td><span className="badge" style={{ background: num(fcr) < 2 ? `rgba(${hexToRgb(C.green)},.12)` : `rgba(${hexToRgb(C.red)},.12)`, color: num(fcr) < 2 ? C.green : C.red }}>{fcr}</span></td>
                       <td style={{ fontSize: 11, color: C.muted }}>{w.note || "-"}</td>
@@ -1175,16 +1183,7 @@ function DaySummaryTab({ session, hideFeed }) {
 }
 
 // ========== SUMMARY TAB ==========
-function SummaryTab({ session, onUpdate }) {
-  const canEdit = !!onUpdate;
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ breed: session.breed || "", receiveWeight: session.receiveWeight || "" });
-
-  const saveInfo = () => {
-    onUpdate({ ...session, breed: form.breed, receiveWeight: form.receiveWeight });
-    setEditing(false);
-  };
-
+function SummaryTab({ session }) {
   const totalMort = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).mortality, 0);
   const totalFeed = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).feed, 0);
   const remaining = num(session.birdCount) - totalMort;
@@ -1195,34 +1194,7 @@ function SummaryTab({ session, onUpdate }) {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div className="card-t">📊 ملخص الدورة</div>
-        {canEdit && !editing && <button className="btn btn-n btn-xs" onClick={() => { setForm({ breed: session.breed || "", receiveWeight: session.receiveWeight || "" }); setEditing(true); }}>✏️ تعديل السلالة/وزن الاستلام</button>}
-      </div>
-      {editing ? (
-        <div className="g2" style={{ marginBottom: 12 }}>
-          <div className="fg">
-            <label className="lbl">نوع السلالة</label>
-            <select className="inp" value={form.breed} onChange={e => setForm(p => ({ ...p, breed: e.target.value }))}>
-              <option value="">اختر السلالة</option>
-              {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
-          <div className="fg">
-            <label className="lbl">وزن الاستلام (جم)</label>
-            <input className="inp" type="number" placeholder="مثال: 42" value={form.receiveWeight} onChange={e => setForm(p => ({ ...p, receiveWeight: e.target.value }))} />
-          </div>
-          <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1" }}>
-            <button className="btn btn-n btn-sm" style={{ flex: 1 }} onClick={() => setEditing(false)}>إلغاء</button>
-            <button className="btn btn-p btn-sm" style={{ flex: 1 }} onClick={saveInfo}>💾 حفظ</button>
-          </div>
-        </div>
-      ) : (session.breed || session.receiveWeight) && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          {session.breed && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>🧬 السلالة: <strong>{session.breed}</strong></div>}
-          {session.receiveWeight && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>⚖️ وزن الاستلام: <strong>{session.receiveWeight} جم</strong></div>}
-        </div>
-      )}
+      <div className="card-t">📊 ملخص الدورة</div>
       <div className="stats">
         <div className="stat"><div className="sv cy">{age}</div><div className="sl">عمر الدورة (يوم)</div></div>
         <div className="stat"><div className="sv cg">{remaining.toLocaleString()}</div><div className="sl">الطيور الحالية</div></div>
@@ -1803,7 +1775,7 @@ function SimpleReport({ title, badge, currentUser, sections, onClose }) {
 }
 
 // ========== PRINT REPORT (PER BARN) ==========
-function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
+function PrintReport({ session, siteName, barnName, currentUser, onClose, siteBreed, siteReceiveWeight }) {
   const totalMort = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).mortality, 0);
   const totalFeed = (session.dailyRecords || []).reduce((s, r) => s + calcDayStats(r).feed, 0);
   const remaining = num(session.birdCount) - totalMort;
@@ -1888,8 +1860,8 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
           {lastW && <div className="a4box"><div className="v">{lastW.avgWeight} جم</div><div className="l">آخر متوسط وزن</div></div>}
           <div className="a4box"><div className="v">{fcr}</div><div className="l">FCR</div></div>
           <div className="a4box"><div className="v">{age} يوم</div><div className="l">عمر الدورة</div></div>
-          {session.breed && <div className="a4box"><div className="v" style={{ fontSize: 15 }}>{session.breed}</div><div className="l">السلالة</div></div>}
-          {session.receiveWeight && <div className="a4box"><div className="v">{session.receiveWeight} جم</div><div className="l">وزن الاستلام</div></div>}
+          {siteBreed && <div className="a4box"><div className="v" style={{ fontSize: 15 }}>{siteBreed}</div><div className="l">السلالة</div></div>}
+          {siteReceiveWeight && <div className="a4box"><div className="v">{siteReceiveWeight} جم</div><div className="l">وزن الاستلام</div></div>}
         </div>
 
         {(session.dailyRecords || []).length > 0 && (
@@ -1956,8 +1928,6 @@ function PrintReport({ session, siteName, barnName, currentUser, onClose }) {
 function StartSession({ barnName, siteName, onStart, onBack }) {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [birds, setBirds] = useState("");
-  const [breed, setBreed] = useState("");
-  const [receiveWeight, setReceiveWeight] = useState("");
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -1975,16 +1945,7 @@ function StartSession({ barnName, siteName, onStart, onBack }) {
               <div className="fg"><label className="lbl">تاريخ البداية</label><input className="inp" type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
               <div className="fg"><label className="lbl">عدد الطيور</label><input className="inp" type="number" placeholder="25000" value={birds} onChange={e => setBirds(e.target.value)} /></div>
             </div>
-            <div className="g2" style={{ marginBottom: 12 }}>
-              <div className="fg"><label className="lbl">نوع السلالة</label>
-                <select className="inp" value={breed} onChange={e => setBreed(e.target.value)}>
-                  <option value="">اختر السلالة</option>
-                  {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-              <div className="fg"><label className="lbl">وزن الاستلام (جم)</label><input className="inp" type="number" placeholder="مثال: 42" value={receiveWeight} onChange={e => setReceiveWeight(e.target.value)} /></div>
-            </div>
-            <button className="btn btn-s" onClick={() => { if (date && birds) onStart(date, birds, breed, receiveWeight); }}>✅ بدء الدورة</button>
+            <button className="btn btn-s" onClick={() => { if (date && birds) onStart(date, birds); }}>✅ بدء الدورة</button>
           </div>
         ) : (
           <p style={{ color: C.muted, fontSize: 13 }}>ليس لديك صلاحية بدء دورة جديدة</p>
@@ -2013,9 +1974,9 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
     onUpdate(d);
   };
 
-  const startSession = (date, birds, breed, receiveWeight) => {
+  const startSession = (date, birds) => {
     const s = emptySession(barnName);
-    s.startDate = date; s.birdCount = birds; s.breed = breed || ""; s.receiveWeight = receiveWeight || "";
+    s.startDate = date; s.birdCount = birds;
     deepUpdateSession(s);
   };
 
@@ -2137,7 +2098,7 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
   return (
     <div>
       {confirmAct && <Confirm msg={confirmAct.msg} onOk={() => { confirmAct.fn(); setConfirmAct(null); }} onCancel={() => setConfirmAct(null)} />}
-      {showReport && <PrintReport session={session} siteName={siteName} barnName={barnName} currentUser={currentUser} onClose={() => setShowReport(false)} />}
+      {showReport && <PrintReport session={session} siteName={siteName} barnName={barnName} currentUser={currentUser} onClose={() => setShowReport(false)} siteBreed={siteData.breed} siteReceiveWeight={siteData.receiveWeight} />}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
         <button className="btn btn-back btn-sm" onClick={onBack}>← رجوع</button>
@@ -2211,9 +2172,9 @@ function BarnPage({ siteId, barnName, data, onUpdate, canEdit, isAdmin, currentU
 
       {activeTab === "daySummary" && <DaySummaryTab session={session} hideFeed={siteId === "qatour"} />}
       {activeTab === "daily" && <DailyTab session={session} siteId={siteId} onUpdate={canEdit ? deepUpdateSession : null} feedStore={siteData.feedStore} medStore={siteData.medStore} onSaveRecord={canEdit ? saveDailyRecord : null} onEditRecord={canEdit ? editDailyRecord : null} onDeleteRecord={isAdmin ? deleteDailyRecord : null} isAdmin={isAdmin} />}
-      {activeTab === "weight" && <WeightTab session={session} onUpdate={canEdit ? deepUpdateSession : null} isAdmin={isAdmin} />}
+      {activeTab === "weight" && <WeightTab session={session} onUpdate={canEdit ? deepUpdateSession : null} isAdmin={isAdmin} siteBreed={siteData.breed} siteReceiveWeight={siteData.receiveWeight} />}
       {activeTab === "medicine" && <MedicineTab session={session} onEditMed={canEdit ? editMedInRecord : null} onDeleteMed={isAdmin ? deleteMedFromRecord : null} barnName={barnName} siteName={siteName} currentUser={currentUser} />}
-      {activeTab === "summary" && <SummaryTab session={session} onUpdate={canEdit ? deepUpdateSession : null} />}
+      {activeTab === "summary" && <SummaryTab session={session} />}
     </div>
   );
 }
@@ -2297,7 +2258,7 @@ function ArchivePage({ data, onUpdate, siteId, onBack, currentUser, isAdmin }) {
     return (
       <div>
         {confirm && <Confirm msg={confirm.msg} onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
-        {showReport && <PrintReport session={s} siteName={s.siteName} barnName={s.barnName} currentUser={currentUser} onClose={() => setShowReport(false)} />}
+        {showReport && <PrintReport session={s} siteName={s.siteName} barnName={s.barnName} currentUser={currentUser} onClose={() => setShowReport(false)} siteBreed={data?.sites?.[siteId]?.breed} siteReceiveWeight={data?.sites?.[siteId]?.receiveWeight} />}
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
           <button className="btn btn-back btn-sm" onClick={() => setSelectedArchive(null)}>← رجوع</button>
           <div className="pg-title" style={{ margin: 0 }}>📦 {s.barnName} — {s.siteName}</div>
@@ -3489,6 +3450,8 @@ function SiteReportsPage({ siteId, data, onBack, currentUser }) {
                   <tr><td>إجمالي العلف الواصل</td><td>{totalFeedIn.toFixed(0)} كجم</td></tr>
                   <tr><td>إجمالي العلف المستهلك</td><td>{totalFeedConsumed.toFixed(0)} كجم</td></tr>
                   <tr><td>إجمالي الجاز الواصل</td><td>{totalGasIn.toFixed(0)} لتر</td></tr>
+                  {siteData.breed && <tr><td>السلالة</td><td>{siteData.breed}</td></tr>}
+                  {siteData.receiveWeight && <tr><td>وزن الاستلام</td><td>{siteData.receiveWeight} جم</td></tr>}
                 </tbody>
               </table>
               <div className="a4sechead">تفاصيل العنابر</div>
@@ -3528,6 +3491,8 @@ function SiteReportsPage({ siteId, data, onBack, currentUser }) {
         <div className="stat"><div className="sv cy">{totalFeedIn.toFixed(0)} كجم</div><div className="sl">🌾 إجمالي العلف الواصل</div></div>
         <div className="stat"><div className="sv" style={{ color: C.accent }}>{totalFeedConsumed.toFixed(0)} كجم</div><div className="sl">🌾 إجمالي العلف المستهلك</div></div>
         <div className="stat"><div className="sv" style={{ color: C.orange }}>{totalGasIn.toFixed(0)} لتر</div><div className="sl">🔥 إجمالي الجاز الواصل</div></div>
+        {siteData.breed && <div className="stat"><div className="sv" style={{ color: C.accentD }}>{siteData.breed}</div><div className="sl">🧬 السلالة</div></div>}
+        {siteData.receiveWeight && <div className="stat"><div className="sv" style={{ color: C.accentD }}>{siteData.receiveWeight} جم</div><div className="sl">⚖️ وزن الاستلام</div></div>}
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -3576,12 +3541,19 @@ function StoreIconCard({ icon, label, color, onClick }) {
   );
 }
 
-function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onBack, onOpenStore, onOpenMedStore, onOpenGasStore, onOpenInjections, onOpenArchive, currentUser }) {
+function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onUpdateSiteInfo, onBack, onOpenStore, onOpenMedStore, onOpenGasStore, onOpenInjections, onOpenArchive, currentUser }) {
   const site = SITES.find(s => s.id === siteId);
   const siteData = data?.sites?.[siteId] || { sessions: {} };
   const [confirm, setConfirm] = useState(null);
   const [showReport, setShowReport] = useState(false);
   const [showReportsPage, setShowReportsPage] = useState(false);
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [infoForm, setInfoForm] = useState({ breed: siteData.breed || "", receiveWeight: siteData.receiveWeight || "" });
+
+  const saveInfo = () => {
+    onUpdateSiteInfo(siteId, infoForm);
+    setEditingInfo(false);
+  };
 
   const activeBarns = site.barns.filter(b => siteData?.sessions?.[b]);
   const totalBirdsNow = activeBarns.reduce((sum, b) => {
@@ -3615,6 +3587,37 @@ function SitePage({ siteId, data, onSelectBarn, onDeleteSite, onArchiveSite, onB
           ))}
         </div>
       )}
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="card-t" style={{ margin: 0 }}>🧬 بيانات السلالة</div>
+          {onUpdateSiteInfo && !editingInfo && <button className="btn btn-n btn-xs" onClick={() => { setInfoForm({ breed: siteData.breed || "", receiveWeight: siteData.receiveWeight || "" }); setEditingInfo(true); }}>✏️ تعديل</button>}
+        </div>
+        {editingInfo ? (
+          <div className="g2" style={{ marginTop: 10 }}>
+            <div className="fg">
+              <label className="lbl">نوع السلالة</label>
+              <select className="inp" value={infoForm.breed} onChange={e => setInfoForm(p => ({ ...p, breed: e.target.value }))}>
+                <option value="">اختر السلالة</option>
+                {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div className="fg">
+              <label className="lbl">وزن الاستلام (جم)</label>
+              <input className="inp" type="number" placeholder="مثال: 42" value={infoForm.receiveWeight} onChange={e => setInfoForm(p => ({ ...p, receiveWeight: e.target.value }))} />
+            </div>
+            <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1" }}>
+              <button className="btn btn-n btn-sm" style={{ flex: 1 }} onClick={() => setEditingInfo(false)}>إلغاء</button>
+              <button className="btn btn-p btn-sm" style={{ flex: 1 }} onClick={saveInfo}>💾 حفظ</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            {siteData.breed ? <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>🧬 السلالة: <strong>{siteData.breed}</strong></div> : <span style={{ fontSize: 11, color: C.muted }}>لم يتم تحديد السلالة بعد</span>}
+            {siteData.receiveWeight && <div style={{ background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 12px", fontSize: 11 }}>⚖️ وزن الاستلام: <strong>{siteData.receiveWeight} جم</strong></div>}
+          </div>
+        )}
+      </div>
 
       {(onArchiveSite || onDeleteSite) && (
         <>
@@ -4021,6 +4024,14 @@ export default function App() {
   const openInjections = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(false); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(true); setShowSettings(false); setShowAiChat(false); };
   const openArchive = (siteId) => { setSelectedSite(siteId); setSelectedBarn(null); setShowArchive(true); setShowStore(false); setShowMedStore(false); setShowGasStore(false); setShowInjections(false); setShowSettings(false); setShowAiChat(false); };
 
+  const updateSiteInfo = (siteId, info) => {
+    const d = JSON.parse(JSON.stringify(data));
+    if (!d.sites[siteId]) return;
+    d.sites[siteId].breed = info.breed || "";
+    d.sites[siteId].receiveWeight = info.receiveWeight || "";
+    updateData(d);
+  };
+
   const archiveSite = (siteId) => {
     const d = JSON.parse(JSON.stringify(data));
     const site = SITES.find(s => s.id === siteId);
@@ -4090,7 +4101,7 @@ export default function App() {
       if (showGasStore && selectedSite) return <GasStorePage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowGasStore(false)} />;
       if (showInjections && selectedSite) return <InjectionsPage siteId={selectedSite} data={data} onUpdate={canEdit ? updateData : null} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setShowInjections(false)} />;
       if (selectedSite && selectedBarn) return <BarnPage siteId={selectedSite} barnName={selectedBarn} data={data} onUpdate={updateData} canEdit={canEdit} isAdmin={isAdmin} currentUser={currentUser} onBack={() => setSelectedBarn(null)} />;
-      if (selectedSite && !selectedBarn) return <SitePage siteId={selectedSite} data={data} onSelectBarn={selectBarn} onDeleteSite={isAdmin ? deleteSite : null} onArchiveSite={isAdmin ? archiveSite : null} onBack={goHome} onOpenStore={openStore} onOpenMedStore={openMedStore} onOpenGasStore={openGasStore} onOpenInjections={openInjections} onOpenArchive={openArchive} currentUser={currentUser} />;
+      if (selectedSite && !selectedBarn) return <SitePage siteId={selectedSite} data={data} onSelectBarn={selectBarn} onDeleteSite={isAdmin ? deleteSite : null} onArchiveSite={isAdmin ? archiveSite : null} onUpdateSiteInfo={isAdmin ? updateSiteInfo : null} onBack={goHome} onOpenStore={openStore} onOpenMedStore={openMedStore} onOpenGasStore={openGasStore} onOpenInjections={openInjections} onOpenArchive={openArchive} currentUser={currentUser} />;
       return <HomePage data={data} onSelectSite={selectSite} onSelectBarn={selectBarn} allowedSites={allowedSites} onOpenSettings={() => { setShowSettings(true); setShowAiChat(false); setShowArchive(false); setSelectedBarn(null); setShowStore(false); }} currentUser={currentUser} />;
     } catch (e) {
       return <div className="empty"><div className="ico">⚠️</div><p>حدث خطأ</p><button className="btn btn-p" style={{ marginTop: 12 }} onClick={goHome}>🏠 الرئيسية</button></div>;
